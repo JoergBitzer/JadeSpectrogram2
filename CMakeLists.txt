@@ -56,4 +56,5 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # and add in juce_add_plugin( FORMATS VST ) there should be VST3 AU and Standalone
 
 # Add your projects
+add_subdirectory(TGMStaticLib)
 add_subdirectory(JadeSpectrogram)                  
