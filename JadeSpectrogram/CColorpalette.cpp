@@ -1,8 +1,10 @@
 #include "CColorpalette.h"
 
+/// @brief Default constructor - initializes with monochrome 2-color palette
+/// Sets up a simple 2-color palette with value range [0, 1]
 CColorPalette::CColorPalette() // MonoChrome
 :m_NrOfColors(2),
-m_ColorScheme(kMono),
+m_ColorScheme(PaletteName::kMono),
 m_InvertScheme(0)
 {
 	m_Min = 0.f;
@@ -10,9 +12,11 @@ m_InvertScheme(0)
 	m_AccessMult = static_cast<float>(m_NrOfColors)/(m_Max-m_Min);
 	AllocateColors();
 }
+/// @brief Constructor with specified number of colors
+/// Initializes with monochrome scheme and value range [0, 1]
 CColorPalette::CColorPalette(int NrOfColors)
 :m_NrOfColors(NrOfColors),
-m_ColorScheme(kMono),
+m_ColorScheme(PaletteName::kMono),
 m_InvertScheme(0)
 {
 	m_Min = 0.f;
@@ -20,7 +24,9 @@ m_InvertScheme(0)
 	m_AccessMult = static_cast<float>(m_NrOfColors)/(m_Max-m_Min);
 	AllocateColors();
 }
-CColorPalette::CColorPalette(int NrOfColors, int ColorScheme)
+/// @brief Constructor with specified colors and color scheme
+/// Sets up palette with given number of colors and scheme, value range [0, 1]
+CColorPalette::CColorPalette(int NrOfColors, PaletteName ColorScheme)
 :m_NrOfColors(NrOfColors),
 m_ColorScheme(ColorScheme),
 m_InvertScheme(0)
@@ -35,7 +41,10 @@ CColorPalette::~CColorPalette()
 
 }
 	
-	// Methoden
+	// Setter methods
+	
+/// @brief Set the value range for color mapping
+/// Ensures Min <= Max by swapping if necessary and prevents zero range
 void CColorPalette::setValueRange (float Min, float Max)
 {
 	if (Max >= Min)
@@ -52,6 +61,9 @@ void CColorPalette::setValueRange (float Min, float Max)
 
 	m_AccessMult = static_cast<float>(m_NrOfColors)/(m_Max-m_Min);
 }
+
+/// @brief Set the number of discrete colors in the palette
+/// Resizes the color vector and regenerates the palette
 void CColorPalette::setNrOfColors (int NrOfColors)
 {
 	m_NrOfColors = NrOfColors;
@@ -59,7 +71,9 @@ void CColorPalette::setNrOfColors (int NrOfColors)
 	m_AccessMult = static_cast<float>(m_NrOfColors)/(m_Max-m_Min);
 	AllocateColors();
 }
-void CColorPalette::setColorSceme (int ColorScheme)
+
+/// @brief Set the color scheme and regenerate palette
+void CColorPalette::setColorScheme (PaletteName ColorScheme)
 {
 	m_ColorScheme = ColorScheme;
 	ComputeColors();
@@ -97,26 +111,32 @@ float CColorPalette::getValue(int iColor)
 	}
 	return 100000000000000000000000000000.f;
 }
+
+/// @brief Allocate color vector and compute colors
+/// Resizes the color vector to hold m_NrOfColors entries
 void CColorPalette::AllocateColors(void)
 {
 	m_Color.resize(m_NrOfColors);
 	ComputeColors();
 
 }
+
+/// @brief Generate color palette based on current scheme
+/// Computes RGB values for all palette entries using the selected color scheme
 void CColorPalette::ComputeColors(void)
 {
 	int kk;
 		int Half = m_NrOfColors/2;
 	switch (m_ColorScheme)
 	{
-	case kMono:
+	case PaletteName::kMono:
 
 
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			if (kk <= Half) // Black
 				m_Color[kk] = 0;
-			else // White
+			else // White - simple black/white transition
 			{
 				int iRed = 255<<16;
 				int iGreen = 255<<8; 			
@@ -131,7 +151,8 @@ void CColorPalette::ComputeColors(void)
 		}
 		break;
 
-	case kBW:
+	case PaletteName::kBW:
+		// Black to White - linear grayscale gradient
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			int iRed = static_cast<int>(255.f * static_cast<float>(kk)/m_NrOfColors) <<16;
@@ -145,7 +166,8 @@ void CColorPalette::ComputeColors(void)
 				m_Color[kk] = iColor;
 		}
 		break;
-	case kRainbow:
+	case PaletteName::kRainbow:
+		// Rainbow spectrum - blue->cyan->green->yellow->red
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			int iRed;
@@ -213,7 +235,8 @@ void CColorPalette::ComputeColors(void)
 				m_Color[kk] = iColor;
 		}
 		break;
-	case kHot:
+	case PaletteName::kHot:
+		// Hot colormap - black->red->yellow->white for high intensity
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			int iRed;
@@ -251,7 +274,8 @@ void CColorPalette::ComputeColors(void)
 
 		break;
 	
-	case kViridis:
+	case PaletteName::kViridis:
+		// Viridis - scientific colormap for perceptually uniform data visualization
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			int nrOfColorsSource = 256;
@@ -269,7 +293,8 @@ void CColorPalette::ComputeColors(void)
 				m_Color[kk] = iColor;
 		}
 		break;
-	case kPlasma:
+	case PaletteName::kPlasma:
+		// Plasma - scientific colormap, alternative perceptually uniform scheme
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			int nrOfColorsSource = 256;
@@ -287,7 +312,8 @@ void CColorPalette::ComputeColors(void)
 				m_Color[kk] = iColor;
 		}
 		break;
-	case kJade:
+	case PaletteName::kJade:
+		// Jade - custom colormap for spectrogram visualization
 		float redstart = 0.3529f;
 		float redmid = 0.89019f;
 		float redend = 0.95f;
@@ -308,6 +334,7 @@ void CColorPalette::ComputeColors(void)
 			int iRed;
 			int iGreen ; 			
 			int iBlue ;
+			// First half: transition from start to mid colors
 			if (kk < MixPoint)
 			{
 
@@ -317,6 +344,7 @@ void CColorPalette::ComputeColors(void)
 			}
 			else 
 			{
+				// Second half: transition from mid to end colors
 				iBlue = static_cast<int>(255*(static_cast<float>(kk-MixPoint)/MixPoint * (blueend-bluemid) + bluemid));
 				iGreen = static_cast<int>(255*(static_cast<float>(kk-MixPoint)/MixPoint * (greenend-greenmid) + greenmid));
 				iRed = static_cast<int>(255*(static_cast<float>(kk-MixPoint)/MixPoint * (redend-redmid) + redmid));
@@ -326,6 +354,7 @@ void CColorPalette::ComputeColors(void)
 			iGreen = iGreen << 8;
 			int iColor = iRed|iGreen|iBlue;
 
+			// Apply inversion if enabled
 			if (m_InvertScheme)
 				m_Color[m_NrOfColors-kk-1] = iColor;
 			else
