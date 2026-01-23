@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 #include <juce_core/juce_core.h>
-#include "memory.h"
+#include <memory.h>
 
 class BlockFreeFiFo
 {
