@@ -1,0 +1,5 @@
+#pragma once
+// Macros for CMAKE
+#define PLUGIN_VERSION_MAJOR @JadeSpectrogram_VERSION_MAJOR@
+#define PLUGIN_VERSION_MINOR @JadeSpectrogram_VERSION_MINOR@
+#define PLUGIN_VERSION_PATCH @JadeSpectrogram_VERSION_PATCH@
