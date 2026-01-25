@@ -57,6 +57,9 @@ include_directories(TGMStaticLib)
 # juce_set_vst2_sdk_path(Libs/vstsdk2.4)
 # and add in juce_add_plugin( FORMATS VST ) there should be VST3 AU and Standalone
 
+# add tester
+add_subdirectory(tester/spectrumAnalyzerTester)
+
 # Add your projects
 add_subdirectory(TGMStaticLib)
 add_subdirectory(JadeSpectrogram)                  
