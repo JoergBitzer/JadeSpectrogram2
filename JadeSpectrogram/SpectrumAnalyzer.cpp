@@ -173,42 +173,44 @@ void SpectrumAnalyzer::setWindowFkt()
         float a2;
         float a3;
         float a4;
+        float alpha = 2.f;
         switch (m_windowType)
         {
             case WindowType::Rect:
                 m_window[kk] = 1.f;
-            break;
+                break;
             case WindowType::Hann:
-                m_window[kk] = 0.5f*(1.f-cos(2.0*M_PI*kk/m_blockSize));
+                m_window[kk] = 0.5f*(1.f-cosf(2.f*M_PI*kk/m_blockSize));
                 break;
             case WindowType::Hamming:
-                m_window[kk] = 25.0/46.0-(1.0-25.0/46.0)*cos(2.0*M_PI*kk/m_blockSize);
+                m_window[kk] = 25.f/46.f-(1.f-25.f/46.f)*cosf(2.f*M_PI*kk/m_blockSize);
                 break;
             case WindowType::BlackmanHarris:
-                a0 = 0.35875;
-                a1 = 0.48829;
-                a2 = 0.14128;
-                a3 = 0.01168;
-                m_window[kk] = a0 - a1*cos(2.0*M_PI*kk/m_blockSize) + a2*cos(4.0*M_PI*kk/m_blockSize) - a3*cos(6.0*M_PI*kk/m_blockSize);
+                a0 = 0.35875f;
+                a1 = 0.48829f;
+                a2 = 0.14128f;
+                a3 = 0.01168f;
+                m_window[kk] = a0 - a1*cosf(2.f*M_PI*kk/m_blockSize) + a2*cosf(4.f*M_PI*kk/m_blockSize) - a3*cosf(6.f*M_PI*kk/m_blockSize);
                 break;
             case WindowType::FlatTop:
-                a0 = 0.21557895;
-                a1 = 0.41663158;
-                a2 = 0.277263158;
-                a3 = 0.083578947;
-                a4 = 0.006947368;
-                m_window[kk] = a0 - a1*cos(2.0*M_PI*kk/m_blockSize) + a2*cos(4.0*M_PI*kk/m_blockSize) 
-                             - a3*cos(6.0*M_PI*kk/m_blockSize) + a4*cos(8.0*M_PI*kk/m_blockSize);
+                a0 = 0.21557895f;
+                a1 = 0.41663158f;
+                a2 = 0.277263158f;
+                a3 = 0.083578947f;
+                a4 = 0.006947368f;
+                m_window[kk] = a0 - a1*cosf(2.f*M_PI*kk/m_blockSize) + a2*cosf(4.f*M_PI*kk/m_blockSize) 
+                             - a3*cosf(6.f*M_PI*kk/m_blockSize) + a4*cosf(8.f*M_PI*kk/m_blockSize);
                 break;
             case WindowType::HannPoisson:
-                float alpha = 2.0;
-                m_window[kk] = 0.5f*(1.f-cos(2.0*M_PI*kk/m_blockSize))
-                                *exp(-alpha*fabs(m_blockSize-2*kk)/m_blockSize);
+
+                m_window[kk] = 0.5f*(1.f-cosf(2.f*M_PI*kk/m_blockSize))
+                                *expf(-alpha*fabsf(static_cast<float> (m_blockSize-2*kk))/m_blockSize);
                 break;
             // More window types can be added here (example: gaussian, tukey, Kaiser, ...)
 
             default:
                 m_window[kk] = 1.f;
+                break;
         }
         normalizeFactor += m_window[kk]*m_window[kk];
     }

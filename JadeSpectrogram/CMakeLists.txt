@@ -66,6 +66,7 @@ target_sources(${TARGET_NAME}
         PluginEditor.cpp
         PluginProcessor.cpp
         JadeSpectrogram.cpp
+        SpectrumAnalyzer.cpp
         CColorpalette.cpp
         tools/MidiModPitchState.cpp
         tools/PresetHandler.cpp

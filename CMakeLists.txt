@@ -45,6 +45,8 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # this is for the eigen library (https://gitlab.com/libeigen/eigen)
 # include_directories(Libs/eigen;Libs/eigen/unsupported)
 
+include_directories(TGMStaticLib)
+
 # and the TGM Tools
 
 # include_directories(Libs/TGMStaticLib)
