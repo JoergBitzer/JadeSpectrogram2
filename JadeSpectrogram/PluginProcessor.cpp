@@ -119,6 +119,12 @@ void JadeSpectrogramAudioProcessor::prepareToPlay (double sampleRate, int sample
     juce::ignoreUnused (samplesPerBlock);
     m_fs = static_cast<float>(sampleRate);
     m_algo.prepareToPlay(sampleRate,samplesPerBlock,nrofchannels);
+    // m_algo.setSamplerate(sampleRate);
+    // m_algo.setmemoryTime_s(10.0);
+    m_algo.setFFTSize(m_fftsize);
+    // m_algo.setfeed_percent(Spectrogram::FeedPercentage::perc50);
+    isRunning = true;
+
 }
 
 void JadeSpectrogramAudioProcessor::releaseResources()

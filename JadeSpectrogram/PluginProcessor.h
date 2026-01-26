@@ -52,6 +52,10 @@ public:
     // Algo component and ValueTreeState must be public to be accessed by the editor
     JadeSpectrogramAudio m_algo;
     std::unique_ptr<AudioProcessorValueTreeState> m_parameterVTS;
+
+    void setFFTSize(int fftsize){m_fftsize = fftsize;};
+    bool getRunningStatus(){return isRunning;};
+
 private:
     CriticalSection m_protect;
     float m_fs; // sampling rate is always needed
@@ -64,6 +68,8 @@ private:
     MidiKeyboardState m_keyboardState;
     MidiModPitchBendState m_wheelState;
 #endif
+    int m_fftsize;
+    bool isRunning;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JadeSpectrogramAudioProcessor)

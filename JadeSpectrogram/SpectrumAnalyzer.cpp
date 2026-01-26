@@ -118,7 +118,7 @@ void SpectrumAnalyzer::setBlockSize(size_t blockSize)
             m_hopSize = m_blockSize / 4;
             break;
     }
-    setWindowFkt();
+    setWindowFunction();
 
     m_mem25aIn.resize(m_blockSize / 4);
     m_mem25bIn.resize(m_blockSize / 4);
@@ -163,7 +163,7 @@ std::string SpectrumAnalyzer::getWindowTypeAsString(WindowType type) const
     }
 }
 
-void SpectrumAnalyzer::setWindowFkt()
+void SpectrumAnalyzer::setWindowFunction()
 {
     m_window.resize(m_blockSize);
     float normalizeFactor = 0.f;

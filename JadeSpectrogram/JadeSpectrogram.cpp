@@ -4,8 +4,11 @@
 #include "PluginProcessor.h"
 
 JadeSpectrogramAudio::JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* processor)
-:SynchronBlockProcessor(), m_processor(processor)
+:SynchronBlockProcessor(), m_processor(processor),m_fftsize(1024)
 {
+    m_mode = JadeSpectrogramAudio::ChannelMixMode::AbsMean;
+    m_windowChoice = SpectrumAnalyzer::WindowType::Hann;
+
 }
 
 void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBlock, int max_channels)
@@ -21,6 +24,8 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
     prepareSynchronProcessing(max_channels,synchronblocksize);
     m_Latency += synchronblocksize;
     // here your code
+    m_fs = static_cast<float> (sampleRate);
+
 
 }
 
@@ -33,24 +38,77 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
 void JadeSpectrogramAudio::addParameter(std::vector<std::unique_ptr<juce::RangedAudioParameter>> &paramVector)
 {
     // this is just a placeholder (necessary for compiling/testing the template)
-    paramVector.push_back(std::make_unique<AudioParameterFloat>(g_paramExample.ID,
-        g_paramExample.name,
-        NormalisableRange<float>(g_paramExample.minValue, g_paramExample.maxValue),
-        g_paramExample.defaultValue,
-        AudioParameterFloatAttributes().withLabel (g_paramExample.unitName)
+        paramVector.push_back(std::make_unique<AudioParameterFloat>(paramDisplayMinFreq.ID,
+		paramDisplayMinFreq.name,
+		NormalisableRange<float>(paramDisplayMinFreq.minValue, paramDisplayMinFreq.maxValue),
+		paramDisplayMinFreq.defaultValue,
+        AudioParameterFloatAttributes().withLabel (paramDisplayMinFreq.unitName)
                                         .withCategory (juce::AudioProcessorParameter::genericParameter)
                                         // or two additional lines with lambdas to convert data for display
-                                        // .withStringFromValueFunction (std::move ([](float value, int MaxLen) { value = int(exp(value) * 10) * 0.1f;  return (String(value, MaxLen) + " Hz"); }))
-                                        // .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
-                        ));
+                                        .withStringFromValueFunction (std::move ([](float value, int MaxLen) { return (String(0.1*int(exp(value)*10 + 0.5), MaxLen)); }))
+                                        .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
+        ));
 
+       	paramVector.push_back(std::make_unique<AudioParameterFloat>(paramDisplayMaxFreq.ID,
+		paramDisplayMaxFreq.name,
+		NormalisableRange<float>(paramDisplayMaxFreq.minValue, paramDisplayMaxFreq.maxValue),
+		paramDisplayMaxFreq.defaultValue,
+        AudioParameterFloatAttributes().withLabel (paramDisplayMaxFreq.unitName)
+                                        .withCategory (juce::AudioProcessorParameter::genericParameter)
+                                        // or two additional lines with lambdas to convert data for display
+                                        .withStringFromValueFunction (std::move ([](float value, int MaxLen) { return (String(0.1*int(exp(value)*10 + 0.5), MaxLen)); }))
+                                        .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
+        ));
+
+       	paramVector.push_back(std::make_unique<AudioParameterFloat>(paramDisplayMinColor.ID,
+		paramDisplayMinColor.name,
+		NormalisableRange<float>(paramDisplayMinColor.minValue, paramDisplayMinColor.maxValue),
+		paramDisplayMinColor.defaultValue,
+        AudioParameterFloatAttributes().withLabel (paramDisplayMinColor.unitName)
+                                        .withCategory (juce::AudioProcessorParameter::genericParameter)
+                                        // or two additional lines with lambdas to convert data for display
+                                        .withStringFromValueFunction (std::move ([](float value, int MaxLen) { return (String(1.0*int((value) + 0.5), MaxLen)); }))
+                                        .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
+        ));
+       	paramVector.push_back(std::make_unique<AudioParameterFloat>(paramDisplayMaxColor.ID,
+		paramDisplayMaxColor.name,
+		NormalisableRange<float>(paramDisplayMaxColor.minValue, paramDisplayMaxColor.maxValue),
+		paramDisplayMaxColor.defaultValue,
+        AudioParameterFloatAttributes().withLabel (paramDisplayMaxColor.unitName)
+                                        .withCategory (juce::AudioProcessorParameter::genericParameter)
+                                        // or two additional lines with lambdas to convert data for display
+                                        .withStringFromValueFunction (std::move ([](float value, int MaxLen) { return (String(1.0*int((value) + 0.5), MaxLen)); }))
+                                        .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
+        ))
 }
 
 void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessorValueTreeState> &vts)
 {
-    juce::ignoreUnused(vts);
+    m_DisplayMinFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMinFreq.ID));
+    m_DisplayMaxFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMaxFreq.ID));
+    m_DisplayMinColor.prepareParameter(vts->getRawParameterValue(paramDisplayMinColor.ID));
+    m_DisplayMaxColor.prepareParameter(vts->getRawParameterValue(paramDisplayMaxColor.ID));
 }
 
+void JadeSpectrogramAudio::setFFTSize(size_t newFFTSize)
+{
+}
+
+void JadeSpectrogramAudio::setclosestFFTSize_ms(float fftsize_ms)
+{
+    m_fftsize = getnextpowerof2(fftsize_ms);    
+}
+
+void JadeSpectrogramAudio::setmemoryTime_s(float memsize_s)
+{
+}
+
+size_t JadeSpectrogramAudio::getnextpowerof2(float fftsize_ms)
+{
+    float firstguessFFTSize = (fftsize_ms*0.001*m_fs);
+    int nextpowerof2 = int(log(firstguessFFTSize)/log(2.f))+1;
+    return size_t(pow(2.f,nextpowerof2));
+}
 
 JadeSpectrogramGUI::JadeSpectrogramGUI(JadeSpectrogramAudioProcessor& p, juce::AudioProcessorValueTreeState& apvts)
 :m_processor(p) ,m_apvts(apvts)

@@ -49,7 +49,7 @@ public:
     void setBlockSize(size_t blockSize);
     void setFFTSize(size_t fftSize);
     void setOverlap(OverlapPercentage overlap);
-    void setWindowType(WindowType type){m_windowType = type; setWindowFkt(); };
+    void setWindowType(WindowType type){m_windowType = type; setWindowFunction(); };
     std::string getWindowTypeAsString(WindowType type) const;
 
 private:
@@ -62,7 +62,7 @@ private:
 
     std::vector<float> m_window;
     spectrum m_fft;
-    void setWindowFkt();
+    void setWindowFunction();
 
     // memory blocks for 50% overlap
     std::vector<float> m_mem50aIn;
