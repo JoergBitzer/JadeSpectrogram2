@@ -118,7 +118,6 @@ void SpectrumAnalyzer::setBlockSize(size_t blockSize)
             m_hopSize = m_blockSize / 4;
             break;
     }
-    m_fftInputBuffer.resize(m_blockSize);
     setWindowFkt();
 
     m_mem25aIn.resize(m_blockSize / 4);
@@ -133,6 +132,8 @@ void SpectrumAnalyzer::setFFTSize(size_t fftSize) // can be different from block
     m_fft.setFFTSize(static_cast<int>(fftSize));
     m_fftRealBuffer.resize(fftSize / 2 + 1);
     m_fftImagBuffer.resize(fftSize / 2 + 1);
+    m_fftInputBuffer.resize(fftSize);
+
 }
 
 void SpectrumAnalyzer::setOverlap(OverlapPercentage overlap)

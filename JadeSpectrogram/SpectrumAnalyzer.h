@@ -44,6 +44,7 @@ public:
     bool getMagnitudeSpectrum(const std::vector<float>& inputSignal, std::vector<float>& outputMagnitudeSpectrum);
     bool getSpectrum(const std::vector<float>& inputSignal, std::vector<float>& outputRealSpectrum, std::vector<float>& outputImagSpectrum);
     bool getFrequencyAxis(std::vector<float>& frequencyAxis);
+    size_t getHopSize() const { return m_hopSize; }
     void setSampleRate(double sampleRate);
     void setBlockSize(size_t blockSize);
     void setFFTSize(size_t fftSize);
