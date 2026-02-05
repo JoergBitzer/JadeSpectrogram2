@@ -85,6 +85,7 @@ public:
 	void setWindowType(SpectrumAnalyzer::WindowType type){m_windowChoice = type; 
 		m_leftAnalyzer.setWindowType(type); m_rightAnalyzer.setWindowType(type);};
 	void setChannelMixMode(ChannelMixMode mode){m_mixMode = mode;};
+	bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
 
 private:
 	JadeSpectrogramAudioProcessor* m_processor;

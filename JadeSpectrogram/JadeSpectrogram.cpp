@@ -132,7 +132,8 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         m_power[kk] = 10.f*log10f(m_power[kk] + g_minValForLogSpectrogram);
     }
     // save into mem
-    m_fifo.push(m_power);
+    if (!m_PauseMode)
+        m_fifo.push(m_power);
 
 
 
