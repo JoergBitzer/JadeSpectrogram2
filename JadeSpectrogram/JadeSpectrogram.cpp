@@ -16,18 +16,10 @@ JadeSpectrogramAudio::JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* proces
 void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBlock, int max_channels)
 {
     juce::ignoreUnused(max_samplesPerBlock,max_channels);
-    int synchronblocksize;
-    synchronblocksize = static_cast<int>(round(g_desired_blocksize_ms * sampleRate * 0.001)); // 0.001 to transform ms to seconds;
-    if (g_forcePowerOf2)
-    {
-        int nextpowerof2 = int(log2(synchronblocksize))+1;
-        synchronblocksize = int(pow(2,nextpowerof2));
-    }
     m_channels = static_cast<size_t>(max_channels);
-    m_fftsize = 2048;
-    synchronblocksize = m_fftsize/2; // for 50% overlap
-    prepareSynchronProcessing(max_channels,synchronblocksize);
-    m_Latency += synchronblocksize;
+    m_fftsize = 2048; 
+    //synchronblocksize = m_fftsize/2; // for 50% overlap
+    size_t synchronblocksize;
     // here your code
     m_fs = static_cast<float> (sampleRate);
     m_leftAnalyzer.setBlockSize(m_fftsize);
@@ -40,9 +32,23 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
     m_rightAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
     m_leftAnalyzer.setWindowType(m_windowChoice);
     m_rightAnalyzer.setWindowType(m_windowChoice);
+    // synchronblocksize should be the same as the hop size of the analyzers, which is determined by the block size and the overlap percentage
+    synchronblocksize = m_leftAnalyzer.getHopSize();
+
+
+    //synchronblocksize = static_cast<int>(round(g_desired_blocksize_ms * sampleRate * 0.001)); // 0.001 to transform ms to seconds;
+    //if (g_forcePowerOf2)
+    //{
+     //   int nextpowerof2 = int(log2(synchronblocksize))+1;
+     //   synchronblocksize = int(pow(2,nextpowerof2));
+    //}
+    prepareSynchronProcessing(max_channels,static_cast<int>(synchronblocksize));
+    m_Latency += static_cast<int>(synchronblocksize);
+
+    // reserve memory for the analyzers and the FIFO
     m_timeInLeft.resize(synchronblocksize);
     m_timeInRight.resize(synchronblocksize);
-    m_freqsize = static_cast<int>(m_fftsize/2)+1;
+    m_freqsize = static_cast<size_t>(m_fftsize/2)+1;
     m_perLeft.resize(m_freqsize);
     m_perRight.resize(m_freqsize);
     m_power.resize(m_freqsize);
