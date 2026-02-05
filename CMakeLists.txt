@@ -45,12 +45,10 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # this is for the eigen library (https://gitlab.com/libeigen/eigen)
 # include_directories(Libs/eigen;Libs/eigen/unsupported)
 
-include_directories(TGMStaticLib)
-
 # and the TGM Tools
+include_directories(TGMStaticLib)
+add_subdirectory(TGMStaticLib)
 
-# include_directories(Libs/TGMStaticLib)
-# add_subdirectory(Libs/TGMStaticLib)
 
 # if you have access zo the vst2.4 sdk (and the license from Steinberg)
 # set the path for JUCE
@@ -61,5 +59,5 @@ include_directories(TGMStaticLib)
 add_subdirectory(tester/spectrumAnalyzerTester)
 
 # Add your projects
-add_subdirectory(TGMStaticLib)
+
 add_subdirectory(JadeSpectrogram)                  

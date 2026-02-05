@@ -36,7 +36,7 @@ public:
         perc75
     };
 
-    SpectrumAnalyzer();
+    SpectrumAnalyzer(){};
     SpectrumAnalyzer(double sampleRate,  size_t fftSize, size_t blockSize, OverlapPercentage overlap = OverlapPercentage::perc50, WindowType type = WindowType::Hann);
     ~SpectrumAnalyzer();
 

@@ -101,8 +101,8 @@ bool TwoDimBlockFreeFiFO::buildMem()
 
     for (size_t kk = 0; kk < m_maxCapacity_x ; kk++)
     {
-        m_Mem[kk].reserve(m_maxCapacity_y);
-        assert(m_Mem[kk].capacity() == m_maxCapacity_y);
+        m_Mem[kk].resize(m_maxCapacity_y);
+        assert(m_Mem[kk].size() == m_maxCapacity_y);
     }
 
     return true;

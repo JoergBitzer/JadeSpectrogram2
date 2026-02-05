@@ -123,6 +123,7 @@ target_link_libraries(${TARGET_NAME}
         # AudioPluginData           # If we'd created a binary data target, we'd link to it here
         # AudioPluginJadeSpectrogram-binary # or here if we used the recursice method
         juce::juce_audio_utils
+        TGMStaticLib
         # juce::juce_opengl  # if we want to use opengl
     PUBLIC
         juce::juce_recommended_config_flags

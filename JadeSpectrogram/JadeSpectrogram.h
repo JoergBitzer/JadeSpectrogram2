@@ -55,7 +55,8 @@ class JadeSpectrogramAudio : public SynchronBlockProcessor
 public:
     enum class ChannelMixMode
     {
-        AbsMean,
+        TimeMean, // mixing in the time domain by calculating the mean of the channels for each sample
+		AbsMean, // all following are working in the time domain
         Max,
         Min,
         Left,
@@ -79,8 +80,11 @@ public:
     
     size_t getnextpowerof2(float fftsize_ms);
 
-    int getSpectrumSize(){return m_freqsize;};
+    size_t getSpectrumSize(){return m_freqsize;};
     float getSamplerate(){return m_fs;};
+	void setWindowType(SpectrumAnalyzer::WindowType type){m_windowChoice = type; 
+		m_leftAnalyzer.setWindowType(type); m_rightAnalyzer.setWindowType(type);};
+	void setChannelMixMode(ChannelMixMode mode){m_mixMode = mode;};
 
 private:
 	JadeSpectrogramAudioProcessor* m_processor;
@@ -96,7 +100,9 @@ private:
 	std::vector<float> m_power;
 	std::vector<float> m_perLeft;
 	std::vector<float> m_perRight;
-    ChannelMixMode m_mode;
+	std::vector<float> m_timeInLeft;
+	std::vector<float> m_timeInRight;
+    ChannelMixMode m_mixMode;
 	SpectrumAnalyzer::WindowType m_windowChoice;
 
 	// paramater

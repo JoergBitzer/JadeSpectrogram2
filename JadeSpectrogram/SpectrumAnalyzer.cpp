@@ -140,6 +140,7 @@ void SpectrumAnalyzer::setOverlap(OverlapPercentage overlap)
 {
     m_overlap = overlap;
     setBlockSize(m_blockSize); // to update hop size and memory buffers
+    setFFTSize(m_fftSize); // to update FFT buffers
 }
 
 std::string SpectrumAnalyzer::getWindowTypeAsString(WindowType type) const
