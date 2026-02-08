@@ -51,7 +51,7 @@ void JadeSpectrogramAudioProcessorEditor::resized()
     int height = getHeight();
     // necessary to change fontsize of comboboxes and PopUpmenus
     // 0.5 is a good compromisecould be slightly higher or lower
-    // m_jadeLAF.setFontSize(0.5*height*g_minPresetHandlerHeight/g_minGuiSize_y);
+    m_jadeLAF.setFontSize(0.5*height*g_minPresetHandlerHeight/g_minGuiSize_y);
     // top presethandler
 #if WITH_PRESETHANDLERGUI    
     m_presetGUI.setBounds(0, 0, getWidth(), height*g_minPresetHandlerHeight/g_minGuiSize_y);
@@ -81,7 +81,9 @@ void JadeSpectrogramAudioProcessorEditor::resized()
     m_editor.setBounds(0, static_cast<int> (height*g_minPresetHandlerHeight/g_minGuiSize_y + 1), 
                         getWidth(), static_cast<int> (height - (height*g_minPresetHandlerHeight/g_minGuiSize_y + 1) ));
     #else
-    m_editor.setBounds(0, 0, getWidth(), height);
+    
+    //m_editor.setBounds(0, 0, getWidth(), height);
+    m_editor.setBounds(scaleFactor*g_spec_x,scaleFactor*g_spec_y,scaleFactor*g_spec_width,scaleFactor*g_spec_height);
 
     #endif                        
 #endif

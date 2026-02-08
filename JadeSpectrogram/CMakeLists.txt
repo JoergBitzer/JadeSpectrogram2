@@ -69,6 +69,7 @@ target_sources(${TARGET_NAME}
         SpectrumAnalyzer.cpp
         TwoDimBlockFreeFiFo.cpp
         CColorpalette.cpp
+        JadeLookAndFeel.cpp
         tools/MidiModPitchState.cpp
         tools/PresetHandler.cpp
         tools/SynchronBlockProcessor.cpp

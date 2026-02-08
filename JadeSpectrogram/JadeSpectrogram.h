@@ -8,6 +8,8 @@
 
 #include "SpectrumAnalyzer.h"
 #include "TwoDimBlockFreeFiFo.h"
+#include "CColorpalette.h"
+#include "JadeLookAndFeel.h"
 
 class JadeSpectrogramAudioProcessor;
 
@@ -115,15 +117,73 @@ private:
     bool m_PauseMode;	
 };
 
-class JadeSpectrogramGUI : public juce::Component
+class JadeSpectrogramGUI : public juce::Component, public Timer
 {
 public:
 	JadeSpectrogramGUI(JadeSpectrogramAudioProcessor& p, juce::AudioProcessorValueTreeState& apvts);
-
+	~JadeSpectrogramGUI() override {stopTimer();};
 	void paint(juce::Graphics& g) override;
 	void resized() override;
+    void setScaleFactor(float newscale){m_scaleFactor = newscale;};	
+    void timerCallback() override;
+    std::function<void()> somethingChanged;    
+    //void mouseMove (const MouseEvent& event);    	
 private:
 	JadeSpectrogramAudioProcessor& m_processor;
     juce::AudioProcessorValueTreeState& m_apvts; 
+
+	float m_scaleFactor = 1.f;
+
+    std::vector<std::vector<float >> m_displaymem;
+    size_t m_displaymem_writepos = 0;
+    size_t m_newDataAvailable = 0;
+    std::vector<float> m_exchangeSpectrum;
+    Image m_internalImg;
+    Image m_ColorbarImg;
+    int m_internalWidth;
+    int m_internalHeight;
+    bool m_recomputeAll;
+
+
+    float m_maxColorVal;
+    float m_minColorVal;
+    CColorPalette m_colorpalette;
+
+    float m_maxDisplayFreq;
+    float m_minDisplayFreq;
+
+// Othe UI Elements
+
+    Label m_DisplayMinFreqLabel;
+    Slider m_DisplayMinFreqSlider;
+    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMinFreqAttachment;
+
+    Label m_DisplayMaxFreqLabel;
+    Slider m_DisplayMaxFreqSlider;
+    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMaxFreqAttachment;
+
+    Label m_DisplayMinColorLabel;
+    Slider m_DisplayMinColorSlider;
+    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMinColorAttachment;
+
+    Label m_DisplayMaxColorLabel;
+    Slider m_DisplayMaxColorSlider;
+    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMaxColorAttachment;
+
+    TextButton m_runModeButton;
+    TextButton m_pauseButton;
+    //void pauseClicked();
+    void runClicked();
+    bool m_isPaused;
+    bool m_isRunningDisplay;
+
+    ComboBox m_colorScheme;
+    ComboBox m_windowFktCombo;
+    
+    //JadeSpectrogramAudioProcessorEditor& m_editor;
+    ComboBox m_fftSizeCombo;
+    bool m_hideFFTSizeCombobox;
+    //void changeFFTSize();
+    Label m_FreqLabel;
 
 };

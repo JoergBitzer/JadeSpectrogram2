@@ -35,7 +35,7 @@ public:
 	/// @brief Constructor with specified colors and color scheme
 	/// @param NrOfColors Number of discrete colors in palette
 	/// @param ColorScheme Color scheme enumeration value (default: PaletteName::kRainbow)
-	CColorPalette(int NrOfColors, PaletteName ColorScheme=PaletteName::kRainbow);
+	CColorPalette(int NrOfColors, PaletteName ColorScheme=PaletteName::kHot);
 	
 	/// @brief Destructor
 	~CColorPalette();
@@ -65,7 +65,7 @@ public:
 	/// @brief Get RGB color for a normalized value with clamping and saturation
 	/// @param value Input value in range [m_Min, m_Max]
 	/// @return 32-bit RGB color in format 0xRRGGBB
-	inline int getRGBColor(float value)
+	inline unsigned int getRGBColor(float value)
 	{
 	if (value >= m_Max)
 		value = m_Max*0.9999f;
@@ -85,7 +85,7 @@ public:
 	/// @brief Get the normalized value corresponding to an RGB color
 	/// @param iColor RGB color in format 0xRRGGBB
 	/// @return Value in range [m_Min, m_Max] or very large number if not found
-	float getValue(int iColor);
+	float getValue(unsigned int iColor);
 	///@}
 
 
@@ -96,7 +96,7 @@ protected:
 	/// @brief Resize color vector and regenerate palette
 	void AllocateColors(void);
 	
-	std::vector<int> m_Color;       ///< Array of RGB colors (0xRRGGBB format)
+	std::vector<unsigned int> m_Color;       ///< Array of RGB colors (0xRRGGBB format)
 	int m_NrOfColors;               ///< Number of discrete colors in palette
 	float m_Max;                    ///< Maximum value for color mapping
 	float m_Min;                    ///< Minimum value for color mapping

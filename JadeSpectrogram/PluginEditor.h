@@ -4,7 +4,7 @@
 // #include "JadeLookAndFeel.h"
 #include "tools/PresetHandler.h"
 #include "tools/MidiModPitchState.h"
-
+#include "JadeLookAndFeel.h"
 
 #include "JadeSpectrogram.h"
 
@@ -21,7 +21,7 @@ public:
     void resized() override;
 
 private:
-    // JadeLookAndFeel m_jadeLAF;
+    JadeLookAndFeel m_jadeLAF;
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     JadeSpectrogramAudioProcessor& m_processorRef;

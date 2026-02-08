@@ -97,7 +97,7 @@ void CColorPalette::setColorScheme (PaletteName ColorScheme)
 
 }
 //*/
-float CColorPalette::getValue(int iColor)
+float CColorPalette::getValue(unsigned int iColor)
 {
 	int kk;
 	float value;
