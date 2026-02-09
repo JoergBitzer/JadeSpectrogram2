@@ -58,9 +58,10 @@ const int g_colorbar_width(30);
 
 const float g_maxColorVal(20.0);
 const float g_minColorVal(-80.0);
-
+const float g_pastTimeMemLen_s (8.0);
 const int g_ButtonHeight(g_menuHeight);
 const int g_ButtonWidth(50);
 const int g_PauseButton_x(g_FreqMeter+g_SliderWidth+g_SliderMinFreq_x);
 const int g_PauseButton_y(g_spec_height-g_menuHeight);
+
 

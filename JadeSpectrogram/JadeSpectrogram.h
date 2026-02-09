@@ -77,7 +77,6 @@ public:
 
 	void setFFTSize(size_t newFFTSize);
     void setclosestFFTSize_ms(float fftsize_ms);
-    void setmemoryTime_s (float memsize_s);
     void setPauseMode (bool mode){m_PauseMode = mode;};
     
     size_t getnextpowerof2(float fftsize_ms);
@@ -91,6 +90,7 @@ public:
 
 private:
 	JadeSpectrogramAudioProcessor* m_processor;
+    CriticalSection m_protectBlock;
     int m_Latency = 0;
     float m_fs;
     size_t m_channels;
@@ -131,7 +131,6 @@ public:
 private:
 	JadeSpectrogramAudioProcessor& m_processor;
     juce::AudioProcessorValueTreeState& m_apvts; 
-
 	float m_scaleFactor = 1.f;
 
     std::vector<std::vector<float >> m_displaymem;
@@ -140,8 +139,8 @@ private:
     std::vector<float> m_exchangeSpectrum;
     Image m_internalImg;
     Image m_ColorbarImg;
-    int m_internalWidth;
-    int m_internalHeight;
+    size_t m_internalWidth;
+    size_t m_internalHeight;
     bool m_recomputeAll;
 
 
@@ -175,6 +174,7 @@ private:
     void pauseClicked();
     void changeFFTSize();
     void mouseMove(const MouseEvent &event);
+    void setLabelText(int x, int y);
     void runClicked();
     bool m_isPaused;
     bool m_isRunningDisplay;

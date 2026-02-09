@@ -13,7 +13,7 @@ SynchronBlockProcessor::SynchronBlockProcessor()
 }
 void SynchronBlockProcessor::prepareSynchronProcessing(int channels, int desiredSize)
 {
-    ScopedLock lock(m_protectBlock);
+    //ScopedLock lock(m_protectBlock);
     //m_protectBlock.enter();
     m_OutBlockSize = desiredSize;
     m_NrOfChannels = channels;
@@ -33,7 +33,7 @@ void SynchronBlockProcessor::prepareSynchronProcessing(int channels, int desired
 }
 void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages)
 {
-    ScopedLock lock(m_protectBlock);
+    //ScopedLock lock(m_protectBlock);
     int nrofBlockProcessed = 0;
     if (m_directthrue == true)
     {
