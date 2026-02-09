@@ -48,7 +48,7 @@ void JadeSpectrogramAudioProcessorEditor::paint (juce::Graphics& g)
     if (m_aboutboxvisible == true)
     {
         m_editor.setVisible(false);
-        g.fillAll (Colour::fromFloatRGBA(0.352941176470588, 0.372549019607843, 0.337254901960784, 0.5));
+        g.fillAll (Colour::fromFloatRGBA(0.352941176470588f, 0.372549019607843f, 0.337254901960784f, 0.5f));
         g.drawImage(m_AboutBox, width/2-m_AboutBox.getWidth()/2,height/2-m_AboutBox.getHeight()/2,
         m_AboutBox.getWidth(), m_AboutBox.getHeight(), 0, 0, m_AboutBox.getWidth(),m_AboutBox.getHeight());
 
@@ -61,7 +61,7 @@ void JadeSpectrogramAudioProcessorEditor::paint (juce::Graphics& g)
     }
     // (Our component is opaque, so we must completely fill the background with a solid colour)
 	float scaleFactor = float(width)/g_minGuiSize_x;
-    g.setColour(getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId).darker(0.2));
+    g.setColour(getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId).darker(0.2f));
     g.fillRect(scaleFactor*g_spec_x,scaleFactor*(g_spec_y-30),scaleFactor*g_spec_width,scaleFactor*30);
     g.drawImage(m_TitleImage, scaleFactor*(g_spec_x+60),scaleFactor*(g_spec_y-30),
     scaleFactor*m_TitleImage.getWidth(),scaleFactor*30,0,0,m_TitleImage.getWidth(),m_TitleImage.getHeight());
@@ -76,7 +76,7 @@ void JadeSpectrogramAudioProcessorEditor::resized()
     int height = getHeight();
     // necessary to change fontsize of comboboxes and PopUpmenus
     // 0.5 is a good compromisecould be slightly higher or lower
-    m_jadeLAF.setFontSize(0.5*height*g_minPresetHandlerHeight/g_minGuiSize_y);
+    m_jadeLAF.setFontSize(0.5f*height*g_minPresetHandlerHeight/g_minGuiSize_y);
     // top presethandler
 #if WITH_PRESETHANDLERGUI    
     m_presetGUI.setBounds(0, 0, getWidth(), height*g_minPresetHandlerHeight/g_minGuiSize_y);
@@ -128,8 +128,8 @@ void JadeSpectrogramAudioProcessorEditor::mouseDown (const MouseEvent& event)
     if (m_aboutboxvisible == false)
     {
         // Is the Logo cicked
-        if (x>scaleFactor*(g_spec_x+g_spec_width-newLogo_x) & y > scaleFactor*(g_spec_y-30) &
-        x < scaleFactor*(g_spec_x+g_spec_width) & y < scaleFactor*(g_spec_y))
+        if ((x>scaleFactor*(g_spec_x+g_spec_width-newLogo_x) & y > scaleFactor*(g_spec_y-30) )&
+        (x < scaleFactor*(g_spec_x+g_spec_width)) & (y < scaleFactor*(g_spec_y)))
         {
             m_aboutboxvisible = true; 
         }

@@ -36,15 +36,15 @@ void JadeLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int widt
 	g.fillEllipse(rx, ry, rw, rw);
 
 	// outline
-	juce::Colour c1 = juce::Colour::fromFloatRGBA(1.3*JadeRed.getFloatRed()*sliderPos,3.0*JadeRed.getFloatGreen()*sliderPos,3.0*JadeRed.getFloatBlue()*sliderPos,1.0);
+	juce::Colour c1 = juce::Colour::fromFloatRGBA(1.3f*JadeRed.getFloatRed()*sliderPos,3.f*JadeRed.getFloatGreen()*sliderPos,3.f*JadeRed.getFloatBlue()*sliderPos,1.f);
 	g.setColour(c1);
 	//g.drawEllipse(rx, ry, rw, rw, 5.0);
-	g.drawEllipse(rx, ry, rw, rw, juce::jmax(int(width*0.07),5));
+	g.drawEllipse(rx, ry, rw, rw, juce::jmax((width*0.07f),5.f));
 
 	// Point
-	int PointSize = juce::jmax(width/6,10);
+	float PointSize = juce::jmax(static_cast<float>(width)/6.f,10.f);
 	juce::Path p;
-	p.addEllipse(-PointSize / 2, -0.95 * radius, PointSize, PointSize);
+	p.addEllipse(-PointSize / 2.f, -0.95f * radius, PointSize, PointSize);
 	p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
 
 	g.setColour(JadeRed);
