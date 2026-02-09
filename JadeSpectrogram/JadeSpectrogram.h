@@ -172,7 +172,9 @@ private:
 
     TextButton m_runModeButton;
     TextButton m_pauseButton;
-    //void pauseClicked();
+    void pauseClicked();
+    void changeFFTSize();
+    void mouseMove(const MouseEvent &event);
     void runClicked();
     bool m_isPaused;
     bool m_isRunningDisplay;

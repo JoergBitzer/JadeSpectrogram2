@@ -56,8 +56,8 @@ const int g_SliderMinColor_y(g_SliderMinFreq_y);
 
 const int g_colorbar_width(30);
 
-const float g_maxColorVal(50.0);
-const float g_minColorVal(-50.0);
+const float g_maxColorVal(20.0);
+const float g_minColorVal(-80.0);
 
 const int g_ButtonHeight(g_menuHeight);
 const int g_ButtonWidth(50);

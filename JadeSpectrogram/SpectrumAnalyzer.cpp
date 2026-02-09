@@ -216,7 +216,7 @@ void SpectrumAnalyzer::setWindowFunction()
         }
         normalizeFactor += m_window[kk]*m_window[kk];
     }
-    normalizeFactor/= m_blockSize;
+    normalizeFactor /= m_blockSize;
     normalizeFactor = sqrt(normalizeFactor);
     for (size_t kk = 0; kk < m_blockSize ; kk++)
     {

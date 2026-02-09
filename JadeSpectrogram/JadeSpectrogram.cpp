@@ -23,40 +23,9 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
     size_t synchronblocksize;
     // here your code
     m_fs = static_cast<float> (sampleRate);
-    m_leftAnalyzer.setBlockSize(m_fftsize);
-    m_rightAnalyzer.setBlockSize(m_fftsize);
     m_leftAnalyzer.setSampleRate(sampleRate);
     m_rightAnalyzer.setSampleRate(sampleRate);
-    m_leftAnalyzer.setFFTSize(m_fftsize);
-    m_rightAnalyzer.setFFTSize(m_fftsize);
-    m_leftAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
-    m_rightAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
-    m_leftAnalyzer.setWindowType(m_windowChoice);
-    m_rightAnalyzer.setWindowType(m_windowChoice);
-    // synchronblocksize should be the same as the hop size of the analyzers, which is determined by the block size and the overlap percentage
-    synchronblocksize = m_leftAnalyzer.getHopSize();
-
-
-    //synchronblocksize = static_cast<int>(round(g_desired_blocksize_ms * sampleRate * 0.001)); // 0.001 to transform ms to seconds;
-    //if (g_forcePowerOf2)
-    //{
-     //   int nextpowerof2 = int(log2(synchronblocksize))+1;
-     //   synchronblocksize = int(pow(2,nextpowerof2));
-    //}
-    prepareSynchronProcessing(max_channels,static_cast<int>(synchronblocksize));
-    m_Latency += static_cast<int>(synchronblocksize);
-
-    // reserve memory for the analyzers and the FIFO
-    m_timeInLeft.resize(synchronblocksize);
-    m_timeInRight.resize(synchronblocksize);
-    m_freqsize = static_cast<size_t>(m_fftsize/2)+1;
-    m_perLeft.resize(m_freqsize);
-    m_perRight.resize(m_freqsize);
-    m_power.resize(m_freqsize);
-    m_fifo.setMaxCapacity(1000, m_freqsize); // 1000 time slices should be enough
-    m_fifo.setActSize(999, m_freqsize); // we push one time slice after the other
-    m_fifo.reset();
-    m_fifo.fill(10.f*log10f(g_minValForLogSpectrogram)); // fill with very low values
+    setFFTSize(m_fftsize);
 }
 
 int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer, juce::MidiBuffer &midiMessages, int NrOfBlocksSinceLastProcessBlock)
@@ -130,7 +99,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     // convert to dB
     for (size_t kk = 0; kk < m_freqsize ; ++kk)
     {
-        m_power[kk] = 10.f*log10f(m_power[kk] + g_minValForLogSpectrogram);
+        m_power[kk] = 10.f*log10f(2.f*m_power[kk]/m_fs + g_minValForLogSpectrogram);
     }
     // save into mem
     if (!m_PauseMode)
@@ -200,6 +169,37 @@ void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessor
 
 void JadeSpectrogramAudio::setFFTSize(size_t newFFTSize)
 {
+    juce::ScopedLock;
+    m_fftsize = newFFTSize;
+    size_t synchronblocksize;
+    m_leftAnalyzer.setBlockSize(m_fftsize);
+    m_rightAnalyzer.setBlockSize(m_fftsize);
+    m_leftAnalyzer.setFFTSize(m_fftsize);
+    m_rightAnalyzer.setFFTSize(m_fftsize);
+    m_leftAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
+    m_rightAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
+    m_leftAnalyzer.setWindowType(m_windowChoice);
+    m_rightAnalyzer.setWindowType(m_windowChoice);
+    // synchronblocksize should be the same as the hop size of the analyzers, which is determined by the block size and the overlap percentage
+    synchronblocksize = m_leftAnalyzer.getHopSize();
+
+
+    prepareSynchronProcessing(m_channels,static_cast<int>(synchronblocksize));
+    m_Latency += static_cast<int>(synchronblocksize);
+
+    // reserve memory for the analyzers and the FIFO
+    m_timeInLeft.resize(synchronblocksize);
+    m_timeInRight.resize(synchronblocksize);
+    m_freqsize = static_cast<size_t>(m_fftsize/2)+1;
+    m_perLeft.resize(m_freqsize);
+    m_perRight.resize(m_freqsize);
+    m_power.resize(m_freqsize);
+    m_fifo.setMaxCapacity(1000, m_freqsize); // 1000 time slices should be enough
+    m_fifo.setActSize(999, m_freqsize); // we push one time slice after the other
+    m_fifo.reset();
+    m_fifo.fill(10.f*log10f(g_minValForLogSpectrogram)); // fill with very low values
+
+
 }
 
 void JadeSpectrogramAudio::setclosestFFTSize_ms(float fftsize_ms)
@@ -218,18 +218,22 @@ size_t JadeSpectrogramAudio::getnextpowerof2(float fftsize_ms)
     return size_t(pow(2.f,nextpowerof2));
 }
 
+float g_pastTimeMemLen_s = 8.0;
 JadeSpectrogramGUI::JadeSpectrogramGUI(JadeSpectrogramAudioProcessor& p, juce::AudioProcessorValueTreeState& apvts)
 :m_processor(p) ,m_apvts(apvts),
-m_internalImg(Image::RGB,1,1,true),m_internalWidth(500),
+m_internalImg(Image::RGB,1,1,true),
 m_internalHeight(1), m_recomputeAll(true),m_maxColorVal(g_maxColorVal),m_minColorVal(g_minColorVal),
 m_colorpalette(256,CColorPalette::PaletteName::kHot),m_maxDisplayFreq(20000.f),m_minDisplayFreq(0.f),
 //somethingChanged(nullptr),
 m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 //,m_editor(editor)
 {
-    startTimer(40) ;
+
     srand (time(NULL));
     m_internalHeight = m_processor.m_algo.getSpectrumSize();
+    float fs = m_processor.m_algo.getSamplerate();
+    m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
+
     m_exchangeSpectrum.resize(m_internalHeight);
 
     m_displaymem.resize(m_internalWidth);
@@ -282,7 +286,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 
     m_pauseButton.setButtonText("Pause");
     m_pauseButton.setToggleState(false,NotificationType::dontSendNotification);
-    //m_pauseButton.onClick = [this](){pauseClicked();};
+    m_pauseButton.onClick = [this](){pauseClicked();};
     addAndMakeVisible(m_pauseButton);
 
     m_runModeButton.setButtonText("Fix");
@@ -308,7 +312,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_windowFktCombo.addItem("FlatTop",5);
     m_windowFktCombo.addItem("HannPoisson",6);
     m_windowFktCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
-    //m_windowFktCombo.onChange = [this](){m_spectrogram.setWindow(static_cast<Spectrogram::Windows> (m_windowFktCombo.getSelectedItemIndex()));};
+    m_windowFktCombo.onChange = [this](){m_processor.m_algo.setWindowType(static_cast<SpectrumAnalyzer::WindowType> (m_windowFktCombo.getSelectedItemIndex()));};
     m_windowFktCombo.setSelectedItemIndex(1,NotificationType::dontSendNotification);
     addAndMakeVisible(m_windowFktCombo);
 
@@ -318,11 +322,18 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_fftSizeCombo.addItem("4096",4);
     m_fftSizeCombo.addItem("8192",5);
     m_fftSizeCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
-    //m_fftSizeCombo.onChange = [this](){changeFFTSize();};
+    m_fftSizeCombo.onChange = [this](){changeFFTSize();};
 
     m_fftSizeCombo.setSelectedItemIndex(2,NotificationType::dontSendNotification);
     addAndMakeVisible(m_fftSizeCombo);
+    m_FreqLabel.setText("Analysis",juce::NotificationType::dontSendNotification);
+    m_FreqLabel.setJustificationType(juce::Justification::centred);
+    m_FreqLabel.setColour(Label::ColourIds::outlineColourId,JadeTeal);
+    m_FreqLabel.setColour(Label::ColourIds::textColourId,juce::Colours::white);
+    m_FreqLabel.setColour(Label::ColourIds::backgroundColourId,JadeTeal);
+    addAndMakeVisible(m_FreqLabel);
 
+    startTimer(40) ;
 }
 
 void JadeSpectrogramGUI::paint(juce::Graphics &g)
@@ -359,7 +370,7 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
 
     int wStartPic = m_scaleFactor*(g_SliderWidth + g_FreqMeter);
 
-    g.drawImage(m_internalImg,wStartPic,0,0.8*w,int(float(h)-m_scaleFactor*g_menuHeight+0.5),
+    g.drawImage(m_internalImg,wStartPic,0,0.8f*w,int(float(h)-m_scaleFactor*g_menuHeight+0.5),
                 0,hStart,m_internalWidth,heightInterval);
     // Add frequency scale
     int nrOfYTicks = 11;
@@ -458,6 +469,7 @@ void JadeSpectrogramGUI::resized()
    
     // if you have to place several components, use scaleFactor
     int width = r.getWidth();
+    int h = r.getHeight();
 	m_scaleFactor = float(width)/g_minGuiSize_x;
 
     // use the given canvas in r
@@ -471,26 +483,26 @@ void JadeSpectrogramGUI::resized()
     m_DisplayMinColorSlider.setBounds(m_scaleFactor*g_SliderMinColor_x,m_scaleFactor*g_SliderMinColor_y,
             m_scaleFactor*g_SliderWidth,m_scaleFactor*g_SliderHeight);
 
-    m_pauseButton.setBounds(m_scaleFactor*g_PauseButton_x, m_scaleFactor*g_PauseButton_y,
+    m_pauseButton.setBounds(m_scaleFactor*g_PauseButton_x,  int(float(h)-m_scaleFactor*g_menuHeight+0.5f),
                     m_scaleFactor*g_ButtonWidth,m_scaleFactor*g_ButtonHeight);
 
     int w = getWidth();
     int x = m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.8*w - m_scaleFactor*g_ButtonWidth;
 
-    m_runModeButton.setBounds(x, m_scaleFactor*g_PauseButton_y,
+    m_runModeButton.setBounds(x, int(float(h)-m_scaleFactor*g_menuHeight+0.5f),
                     m_scaleFactor*g_ButtonWidth,m_scaleFactor*g_ButtonHeight);
 
-    m_colorScheme.setBounds(w-m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth), m_scaleFactor*g_PauseButton_y,
+    m_colorScheme.setBounds(w-m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth), int(float(h)-m_scaleFactor*g_menuHeight+0.5f),
                     m_scaleFactor*g_colorbar_width, m_scaleFactor*g_ButtonHeight);
 
     x = m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.4*w - m_scaleFactor*0.5*100;
-    // m_FreqLabel.setBounds(x ,m_scaleFactor*g_PauseButton_y,m_scaleFactor*100,m_scaleFactor*g_ButtonHeight );                    
+    m_FreqLabel.setBounds(x , int(float(h)-m_scaleFactor*g_menuHeight+0.5f),m_scaleFactor*100,m_scaleFactor*g_ButtonHeight );                    
 
     x = m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.2*w - m_scaleFactor*0.5*100;
-    m_windowFktCombo.setBounds(x,m_scaleFactor*g_PauseButton_y,m_scaleFactor*100,m_scaleFactor*g_ButtonHeight);
+    m_windowFktCombo.setBounds(x, int(float(h)-m_scaleFactor*g_menuHeight+0.5f),m_scaleFactor*100,m_scaleFactor*g_ButtonHeight);
 
     x = m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.6*w - m_scaleFactor*0.5*100;
-    m_fftSizeCombo.setBounds(x,m_scaleFactor*g_PauseButton_y,m_scaleFactor*100,m_scaleFactor*g_ButtonHeight);
+    m_fftSizeCombo.setBounds(x, int(float(h)-m_scaleFactor*g_menuHeight+0.5f),m_scaleFactor*100,m_scaleFactor*g_ButtonHeight);
             
     crit.exit();
 }
@@ -513,7 +525,11 @@ void JadeSpectrogramGUI::timerCallback()
         if (actSpectrumSize != m_internalHeight)
         {
             m_internalHeight = static_cast<int>(actSpectrumSize);
+            float fs = m_processor.m_algo.getSamplerate();
+            m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
+
             m_recomputeAll = true;
+            m_displaymem.resize(m_internalWidth);
             for (auto &vec : m_displaymem)
             {
                 vec.resize(m_internalHeight);
@@ -669,4 +685,50 @@ void JadeSpectrogramGUI::runClicked()
         m_runModeButton.setButtonText("Run");
         m_runModeButton.setToggleState(true,NotificationType::dontSendNotification);
     }    
+}
+void JadeSpectrogramGUI::pauseClicked()
+{
+    m_isPaused = !m_isPaused;
+    m_processor.m_algo.setPauseMode(m_isPaused);
+    if (m_isPaused)
+    {
+        m_pauseButton.setToggleState(true,NotificationType::dontSendNotification);
+    }
+    else
+    {
+        m_pauseButton.setToggleState(false,NotificationType::dontSendNotification);
+    }
+}
+
+void JadeSpectrogramGUI::changeFFTSize()
+{
+    auto FFTSizeIndex = m_fftSizeCombo.getSelectedItemIndex();
+    int fftSize = pow(2.0,9+FFTSizeIndex);
+    
+    //DBG(String(fftSize));
+    stopTimer();
+    m_processor.m_algo.setFFTSize(fftSize);
+    startTimer(40);
+}
+
+void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
+{
+    int x = event.getMouseDownX();
+    int y = event.getMouseDownY();
+
+    int w = getWidth();
+    int h = getHeight();
+    int wstart = m_scaleFactor*(g_FreqMeter+g_SliderMaxFreq_x+g_SliderWidth);
+    if (y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
+    {
+        float freq = (1.0-float(y)/(float(h)-m_scaleFactor*g_ButtonHeight))*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
+        MidiMessage msg;
+        int midinotenumber =  int(log(freq/440.0)/log(2) * 12 + 69 + 0.5);
+        String midiNoteName = msg.getMidiNoteName(midinotenumber,true,true,4);
+
+        m_FreqLabel.setText(String(int(freq+0.5)) + String(" Hz | ") + midiNoteName,juce::NotificationType::dontSendNotification);
+
+    }
+
+
 }
