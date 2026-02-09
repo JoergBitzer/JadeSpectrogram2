@@ -375,15 +375,15 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
         String OutText;
         if (newExaktFreq >= 1000.f)
         {
-            newExaktFreq = int(newExaktFreq*0.01 +0.5)*100;
-            OutText += String(newExaktFreq/1000);
+            newExaktFreq = int(newExaktFreq*0.02f +0.5f)*50.f;
+            OutText += String(newExaktFreq/1000.f);
             OutText += "k";
         }
         else
         {
             if (newExaktFreq >= 150.f)
             {
-                newExaktFreq = int(newExaktFreq*0.1 +0.5)*10;
+                newExaktFreq = int(newExaktFreq*0.2f +0.5f)*5.f;
                 OutText += String(newExaktFreq);
             }
             else
@@ -724,10 +724,11 @@ void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
 
 void JadeSpectrogramGUI::setLabelText(int x, int y)
 {
+   
     int w = getWidth();
     int h = getHeight();
     int wstart = m_scaleFactor*(g_FreqMeter+g_SliderMaxFreq_x+g_SliderWidth);
-    if (y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
+    if (y >= 0 && y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
     {
         
         float freq = (1.0-float(y)/(float(h)-m_scaleFactor*g_menuHeight))*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
