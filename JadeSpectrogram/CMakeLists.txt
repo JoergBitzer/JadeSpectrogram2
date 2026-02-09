@@ -94,7 +94,15 @@ target_compile_definitions(${TARGET_NAME}
 # static library. These source files can be of any kind (wav data, images, fonts, icons etc.).
 # Conversion to binary-data will happen when your target is built.
 
-# juce_add_binary_data(${TARGET_NAME}-binary SOURCES ...)
+
+
+juce_add_binary_data(${TARGET_NAME}-binary 
+                    SOURCES 
+                        images/LogoJadeHochschule.jpg 
+                        images/Title.png
+                        images/LogoJadeHochschuleTrans.png
+                        images/AboutBox.png)
+
 
 # `target_link_libraries` links libraries and JUCE modules to other libraries or executables. Here,
 # we're linking our executable target to the `juce::juce_audio_utils` module. Inter-module
@@ -112,17 +120,17 @@ target_compile_definitions(${TARGET_NAME}
 #juce_add_binary_data( ${TARGET_NAME}-binary
 #  SOURCES ${TEMPLATE_RESOURCES_GLOB}
 #)
-#if( UNIX AND NOT APPLE )
-#set_target_properties(${TARGET_NAME}-binary PROPERTIES
-#    POSITION_INDEPENDENT_CODE TRUE)
-#endif()
+if( UNIX AND NOT APPLE )
+set_target_properties(${TARGET_NAME}-binary PROPERTIES
+    POSITION_INDEPENDENT_CODE TRUE)
+endif()
 
 
 
 target_link_libraries(${TARGET_NAME}
     PRIVATE
         # AudioPluginData           # If we'd created a binary data target, we'd link to it here
-        # AudioPluginJadeSpectrogram-binary # or here if we used the recursice method
+        ${TARGET_NAME}-binary # or here if we used the recursice method
         juce::juce_audio_utils
         TGMStaticLib
         # juce::juce_opengl  # if we want to use opengl

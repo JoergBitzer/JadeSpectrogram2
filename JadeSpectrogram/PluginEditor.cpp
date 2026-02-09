@@ -28,6 +28,11 @@ JadeSpectrogramAudioProcessorEditor::JadeSpectrogramAudioProcessorEditor (JadeSp
 
     // from here your algo editor ---------
     addAndMakeVisible(m_editor);
+    m_TitleImage = ImageFileFormat::loadFrom(BinaryData::Title_png, BinaryData::Title_pngSize);
+    //m_JadeLogo = ImageFileFormat::loadFrom(BinaryData::LogoJadeHochschule_jpg, BinaryData::LogoJadeHochschule_jpgSize);
+    m_JadeLogo = ImageFileFormat::loadFrom(BinaryData::LogoJadeHochschuleTrans_png, BinaryData::LogoJadeHochschuleTrans_pngSize);
+    m_AboutBox = ImageFileFormat::loadFrom(BinaryData::AboutBox_png, BinaryData::AboutBox_pngSize);
+
 
 }
 
@@ -38,13 +43,33 @@ JadeSpectrogramAudioProcessorEditor::~JadeSpectrogramAudioProcessorEditor()
 //==============================================================================
 void JadeSpectrogramAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
-    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    int width = getWidth();
+    int height = getHeight();
+    if (m_aboutboxvisible == true)
+    {
+        m_editor.setVisible(false);
+        g.fillAll (Colour::fromFloatRGBA(0.352941176470588, 0.372549019607843, 0.337254901960784, 0.5));
+        g.drawImage(m_AboutBox, width/2-m_AboutBox.getWidth()/2,height/2-m_AboutBox.getHeight()/2,
+        m_AboutBox.getWidth(), m_AboutBox.getHeight(), 0, 0, m_AboutBox.getWidth(),m_AboutBox.getHeight());
 
-    g.setColour (juce::Colours::white);
-    g.setFont (15.0f);
-    juce::String text2display = "Hello World! V " + juce::String(PLUGIN_VERSION_MAJOR) + "." + juce::String(PLUGIN_VERSION_MINOR) + "." + juce::String(PLUGIN_VERSION_PATCH);
-    g.drawFittedText (text2display, getLocalBounds(), juce::Justification::centred, 1);
+    }
+    else
+    {
+        g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+        m_editor.setVisible(true);
+
+    }
+    // (Our component is opaque, so we must completely fill the background with a solid colour)
+	float scaleFactor = float(width)/g_minGuiSize_x;
+    g.setColour(getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId).darker(0.2));
+    g.fillRect(scaleFactor*g_spec_x,scaleFactor*(g_spec_y-30),scaleFactor*g_spec_width,scaleFactor*30);
+    g.drawImage(m_TitleImage, scaleFactor*(g_spec_x+60),scaleFactor*(g_spec_y-30),
+    scaleFactor*m_TitleImage.getWidth(),scaleFactor*30,0,0,m_TitleImage.getWidth(),m_TitleImage.getHeight());
+    int LogoSize = 32;
+    float newLogo_x = LogoSize*m_JadeLogo.getWidth()/m_JadeLogo.getHeight();
+    g.drawImage(m_JadeLogo, scaleFactor*(g_spec_x+g_spec_width-newLogo_x),scaleFactor*(g_spec_y-30),
+    scaleFactor*newLogo_x,scaleFactor*LogoSize,0,0,m_JadeLogo.getWidth(),m_JadeLogo.getHeight());
+
 }
 void JadeSpectrogramAudioProcessorEditor::resized()
 {
@@ -88,4 +113,29 @@ void JadeSpectrogramAudioProcessorEditor::resized()
     #endif                        
 #endif
 
+}
+void JadeSpectrogramAudioProcessorEditor::mouseDown (const MouseEvent& event)
+{
+    int x = event.getMouseDownX();
+    int y = event.getMouseDownY();
+
+    int w = getWidth();
+    int h = getHeight();
+    float scaleFactor = float(w)/g_minGuiSize_x;
+    int LogoSize = 32;
+    float newLogo_x = LogoSize*m_JadeLogo.getWidth()/m_JadeLogo.getHeight();
+
+    if (m_aboutboxvisible == false)
+    {
+        // Is the Logo cicked
+        if (x>scaleFactor*(g_spec_x+g_spec_width-newLogo_x) & y > scaleFactor*(g_spec_y-30) &
+        x < scaleFactor*(g_spec_x+g_spec_width) & y < scaleFactor*(g_spec_y))
+        {
+            m_aboutboxvisible = true; 
+        }
+    }else
+    {
+        m_aboutboxvisible = false; 
+    }
+    repaint();
 }
