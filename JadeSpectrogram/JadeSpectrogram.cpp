@@ -1,5 +1,7 @@
 #include <math.h>
 #include <cassert>
+#include <chrono>
+#include <thread>
 #include "JadeSpectrogram.h"
 
 #include "PluginProcessor.h"
@@ -338,17 +340,19 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
 
     float fs = m_processor.m_algo.getSamplerate();
     
-    m_minDisplayFreq = exp(m_DisplayMinFreqSlider.getValue());
-    m_maxDisplayFreq = exp(m_DisplayMaxFreqSlider.getValue());
+    m_minDisplayFreq = static_cast<float>(exp(m_DisplayMinFreqSlider.getValue()));
+    m_maxDisplayFreq = static_cast<float>(exp(m_DisplayMaxFreqSlider.getValue()));
 
-    if (m_minDisplayFreq >= fs*0.5)
-        m_minDisplayFreq = 0.9*fs*0.5;
-    if (m_maxDisplayFreq >= fs*0.5)
-        m_maxDisplayFreq = fs*0.5;
+    if (m_minDisplayFreq >= fs*0.5f)
+        m_minDisplayFreq = 0.9f*fs*0.5f;
+    if (m_maxDisplayFreq >= fs*0.5f)
+        m_maxDisplayFreq = fs*0.5f;
 
-    if (1.1*m_minDisplayFreq >= m_maxDisplayFreq)
+    if (1.1f*m_minDisplayFreq >= m_maxDisplayFreq)
     {
-        m_minDisplayFreq = 0.8*m_maxDisplayFreq;
+        //m_minDisplayFreq = 0.8f*m_maxDisplayFreq;
+        m_maxDisplayFreq = 1.1f*m_minDisplayFreq;
+        m_DisplayMaxFreqSlider.setValue(log(1.1f*m_minDisplayFreq));
         m_DisplayMinFreqSlider.setValue(log(m_minDisplayFreq));
     }
 
@@ -704,14 +708,16 @@ void JadeSpectrogramGUI::pauseClicked()
 void JadeSpectrogramGUI::changeFFTSize()
 {
     stopTimer();
-    _sleep(100);
+    //_sleep(100);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     auto FFTSizeIndex = m_fftSizeCombo.getSelectedItemIndex();
     int fftSize = pow(2.0,9+FFTSizeIndex);
     
     //DBG(String(fftSize));
     m_processor.m_algo.setFFTSize(fftSize);
-    _sleep(100);    
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     startTimer(40);
+    
 }
 
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
