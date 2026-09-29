@@ -499,6 +499,9 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     
     m_newDataAvailable = 0;
 
+    drawCrosshair(g, juce::Rectangle<int>(wStartPic, 0, static_cast<int>(0.8f*w),
+                                          int(float(h)-m_scaleFactor*g_menuHeight+0.5)));
+
     g.setColour (JadeTeal);
     g.setFont (9.0f*m_scaleFactor);
     
@@ -764,13 +767,51 @@ void JadeSpectrogramGUI::changeFFTSize()
 
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
 {
-    int x = event.getMouseDownX();
-    int y = event.getMouseDownY();
-    setLabelText(x,y);
-
+    m_mousePos = event.getPosition();
+    m_mouseInDisplay = setLabelText(m_mousePos.getX(), m_mousePos.getY());
+    repaint();
 }
 
-void JadeSpectrogramGUI::setLabelText(int x, int y)
+void JadeSpectrogramGUI::mouseExit (const MouseEvent& event)
+{
+    juce::ignoreUnused(event);
+    m_mouseInDisplay = false;
+    repaint();
+}
+
+void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display)
+{
+    if (!m_mouseInDisplay || !display.contains(m_mousePos))
+        return;
+    const float x = static_cast<float>(m_mousePos.getX()) + 0.5f;
+    const float y = static_cast<float>(m_mousePos.getY()) + 0.5f;
+
+    // thin lines through the mouse position, across the whole display
+    g.setColour(juce::Colours::white.withAlpha(0.7f));
+    g.drawLine(static_cast<float>(display.getX()), y, static_cast<float>(display.getRight()), y, 1.0f);
+    g.drawLine(x, static_cast<float>(display.getY()), x, static_cast<float>(display.getBottom()), 1.0f);
+
+    // readout (the same text as below the display) next to the cursor,
+    // on the other side of the cursor near the right and bottom edges
+    const juce::String text = m_FreqLabel.getText();
+    const juce::Font font(juce::FontOptions(13.0f*m_scaleFactor));
+    const int textW = juce::GlyphArrangement::getStringWidthInt(font, text) + static_cast<int>(10.0f*m_scaleFactor);
+    const int textH = static_cast<int>(18.0f*m_scaleFactor);
+    const int gap = static_cast<int>(10.0f*m_scaleFactor);
+    juce::Rectangle<int> box(m_mousePos.getX() + gap, m_mousePos.getY() + gap, textW, textH);
+    if (box.getRight() > display.getRight())
+        box.setX(m_mousePos.getX() - gap - textW);
+    if (box.getBottom() > display.getBottom())
+        box.setY(m_mousePos.getY() - gap - textH);
+
+    g.setColour(juce::Colours::black.withAlpha(0.65f));
+    g.fillRoundedRectangle(box.toFloat(), 3.0f*m_scaleFactor);
+    g.setColour(juce::Colours::white);
+    g.setFont(font);
+    g.drawText(text, box, juce::Justification::centred, false);
+}
+
+bool JadeSpectrogramGUI::setLabelText(int x, int y)
 {
    
     int w = getWidth();
@@ -809,6 +850,8 @@ void JadeSpectrogramGUI::setLabelText(int x, int y)
         String midiNoteName = msg.getMidiNoteName(midinotenumber,true,true,4);
 
         m_FreqLabel.setText(String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB") ,juce::NotificationType::dontSendNotification);
+        return true;
     }
+    return false;
 }
 

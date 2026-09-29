@@ -194,8 +194,12 @@ private:
     TextButton m_pauseButton;
     void pauseClicked();
     void changeFFTSize();
-    void mouseMove(const MouseEvent &event);
-    void setLabelText(int x, int y);
+    void mouseMove(const MouseEvent &event) override;
+    void mouseExit(const MouseEvent &event) override;
+    bool setLabelText(int x, int y); // true if (x, y) is inside the analysis display
+    void drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display);
+    juce::Point<int> m_mousePos;
+    bool m_mouseInDisplay = false; // crosshair is drawn while the mouse is over the display
     void runClicked();
     bool m_isPaused;
     bool m_isRunningDisplay;
