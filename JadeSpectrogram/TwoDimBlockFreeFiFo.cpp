@@ -19,63 +19,56 @@ TwoDimBlockFreeFiFO::TwoDimBlockFreeFiFO(size_t max_x, size_t max_y)
 bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock)
 {
     assert(inBlock.size() == m_actSize_y);
-    memcpy(m_Mem[m_writecounter].data(), inBlock.data(), m_actSize_y*sizeof(float));
-    m_writecounter++;
-    if (m_writecounter == m_actSize_x)
-        m_writecounter = 0;
+    const size_t write = m_writecounter.load(std::memory_order_relaxed); // only this thread writes it
+    const size_t next = nextIndex(write);
 
-    // This will happen, if there is no reading (or reading is slower than writing)
-    if (m_writecounter == m_readcounter) // m_writecounter overtook m_readcounter ==> overwrite latest data
-    {
-        m_readcounter++;
-        if (m_readcounter == m_actSize_x)        
-            m_readcounter = 0;
-    }
+    // Full: the reader is too slow or not reading at all (e.g. editor closed).
+    // Drop the new slice: overwriting the oldest one would mean the producer moves
+    // m_readcounter, which races with a pop() copying out of that very slot.
+    if (next == m_readcounter.load(std::memory_order_acquire))
+        return false;
+
+    memcpy(m_Mem[write].data(), inBlock.data(), m_actSize_y*sizeof(float));
+    m_writecounter.store(next, std::memory_order_release); // publish the slice
     return true;
 }
 
 bool TwoDimBlockFreeFiFO::pop(std::vector<float> &outBlock)
 {
-    size_t next = m_readcounter + 1;
-    if (next == m_actSize_x)
-        next = 0;
-    
-    if (next == m_writecounter) // reading is faster than writing
+    const size_t read = m_readcounter.load(std::memory_order_relaxed); // only this thread writes it
+    if (read == m_writecounter.load(std::memory_order_acquire)) // reading is faster than writing
         return false;
-    
+
     assert(outBlock.size() == m_actSize_y);
-    memcpy(outBlock.data(), m_Mem[m_readcounter].data(), m_actSize_y*sizeof(float));
-    m_readcounter = next;
+    memcpy(outBlock.data(), m_Mem[read].data(), m_actSize_y*sizeof(float));
+    m_readcounter.store(nextIndex(read), std::memory_order_release); // hand the slot back to the writer
     return true;
 }
 
 size_t TwoDimBlockFreeFiFO::getNumAvailableToRead() const
 {
-    if (m_writecounter > m_readcounter)
-        return m_writecounter - m_readcounter - 1; // always one block delay, so never access to the same memory
-
-    if (m_readcounter > m_writecounter)
-        return m_actSize_x - m_readcounter + m_writecounter - 1;
-    return 0;
+    const size_t write = m_writecounter.load(std::memory_order_acquire);
+    const size_t read = m_readcounter.load(std::memory_order_relaxed);
+    if (write >= read)
+        return write - read;
+    return m_actSize_x - read + write;
 }
 
 bool TwoDimBlockFreeFiFO::getBlock(std::vector<std::vector<float>> &outBlock) 
 {
-    size_t nrOfBlocks = outBlock.size();
-
-    for (size_t kk = 0; kk < nrOfBlocks; kk++)
+    for (auto &slice : outBlock)
     {
-        bool success = pop(outBlock[kk]);
-        if (!success)
-            assert("This should not happen");
+        if (!pop(slice))
+            return false;
     }
-
-    return false;
+    return true;
 }
 
 bool TwoDimBlockFreeFiFO::setActSize(size_t act_x, size_t act_y)
 {
     m_actSize_x = act_x;
+    m_writecounter.store(0); // old counters may lie outside the new size
+    m_readcounter.store(0);
     m_Mem.resize(m_actSize_x);
     m_actSize_y = act_y;
     for (size_t kk = 0; kk < m_actSize_x ; kk++)
