@@ -138,6 +138,10 @@ private:
     std::atomic<bool> m_PauseMode; // GUI writes, audio thread reads
 };
 
+// logarithmic frequency axis: lowest displayed frequency and number of image rows
+const float g_logAxisMinFreq = 20.f;
+const size_t g_logAxisRows = 1024;
+
 class JadeSpectrogramGUI : public juce::Component, public Timer
 {
 public:
@@ -199,6 +203,22 @@ private:
     bool setLabelText(int x, int y); // true if (x, y) is inside the analysis display
     void drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display);
     juce::Point<int> m_mousePos;
+
+    // frequency axis: linear (image row = FFT bin, paint() crops the range) or logarithmic
+    // (g_logAxisRows image rows, each mapped to the bins of its frequency interval)
+    TextButton m_freqAxisButton;
+    void freqAxisClicked();
+    void setFreqAxisButtonText();
+    bool m_logFreqAxis = false;
+    size_t m_imageRows = 1; // height of m_internalImg
+    struct RowMap { size_t bin0; size_t bin1; float frac; bool useMax; };
+    std::vector<RowMap> m_rowMap; // empty: linear axis
+    float m_mapMinFreq = 0.f; // frequency range and data the log mapping was built for
+    float m_mapMaxFreq = 0.f;
+    size_t m_mapBins = 0;
+    float m_mapFs = 0.f;
+    void updateFrequencyMapping(); // rebuilds the mapping (and resizes the image) if needed
+    float rowValue(const std::vector<float>& column, size_t row) const;
     bool m_mouseInDisplay = false; // crosshair is drawn while the mouse is over the display
     void runClicked();
     bool m_isPaused;

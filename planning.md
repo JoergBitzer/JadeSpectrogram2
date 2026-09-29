@@ -95,7 +95,7 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
 
 ## next steps on a finer scale
 1. Remaining real-time items (section 2)
-2. log frequency axis with a small button to switch between lin/log
+2. ~~log frequency axis with a small button to switch between lin/log~~ -- done in 1.5.0 (lower limit at least 20 Hz in log mode).
 3. ~~**Crosshair / cursor** that shows frequency, note and level directly at the mouse~~ -- done in 1.4.0.
 4. **Export**: copy the current image (just the spectrogram with axis) to the clipboard,
 5. - **Smoothing / averaging** along time (exponential, tau as smoothing paramater should be a slider)

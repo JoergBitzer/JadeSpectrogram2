@@ -47,6 +47,9 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     float getScaleFactor(){return m_pluginScaleFactor;};
+    // display setting of the editor, kept here so it survives closing the editor (message thread only)
+    bool getLogFreqAxis() const {return m_logFreqAxis;};
+    void setLogFreqAxis(bool log){m_logFreqAxis = log;};
     void setScaleFactor(float newscalefactor){m_pluginScaleFactor = newscalefactor;};
     
     // Algo component and ValueTreeState must be public to be accessed by the editor
@@ -65,7 +68,8 @@ private:
     //Parameterhandling
     std::vector <std::unique_ptr<RangedAudioParameter>> m_paramVector;
 	PresetHandler m_presets;
-    float m_pluginScaleFactor = 1.0;    
+    float m_pluginScaleFactor = 1.0;
+    bool m_logFreqAxis = false;    
 #if WITH_MIDIKEYBOARD    
     MidiKeyboardState m_keyboardState;
     MidiModPitchBendState m_wheelState;

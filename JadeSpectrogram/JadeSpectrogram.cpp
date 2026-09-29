@@ -286,7 +286,8 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
         vec.resize(static_cast<size_t>(m_internalHeight));
         std::fill(vec.begin(), vec.end(), 10.f*log10f(g_minValForLogSpectrogram));
     }
-    m_internalImg = m_internalImg.rescaled(static_cast<int>(m_internalWidth),static_cast<int>(m_internalHeight));
+    m_imageRows = m_internalHeight;
+    m_internalImg = m_internalImg.rescaled(static_cast<int>(m_internalWidth),static_cast<int>(m_imageRows));
 
     // GUI Elements
     m_colorpalette.setValueRange(m_minColorVal,m_maxColorVal);
@@ -332,6 +333,12 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_pauseButton.setToggleState(false,NotificationType::dontSendNotification);
     m_pauseButton.onClick = [this](){pauseClicked();};
     addAndMakeVisible(m_pauseButton);
+
+    m_logFreqAxis = m_processor.getLogFreqAxis();
+    setFreqAxisButtonText();
+    m_freqAxisButton.onClick = [this](){freqAxisClicked();};
+    addAndMakeVisible(m_freqAxisButton);
+    updateFrequencyMapping();
 
     m_runModeButton.setButtonText("Fix");
     m_runModeButton.setToggleState(false,NotificationType::dontSendNotification);
@@ -417,13 +424,37 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
 
     int wStartPic =static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter));
 
+    int TextHeight = 20;
+    int nrOfYTicks = 11;
+    float RangePerTick = 0.f;
+    if (!m_rowMap.empty()) // logarithmic axis: the image already covers exactly the displayed range
+    {
+        g.drawImage(m_internalImg,wStartPic,0,static_cast<int>(0.8f*w),int(float(h)-m_scaleFactor*g_menuHeight+0.5),
+                    0,0,static_cast<int>(m_internalWidth),static_cast<int>(m_imageRows));
+        // ticks at 1, 2, 5 x 10^k
+        g.setFont(0.8f*m_scaleFactor*static_cast<float>(TextHeight));
+        const float displayH = float(h)-m_scaleFactor*g_menuHeight;
+        const float logRange = std::log(m_mapMaxFreq/m_mapMinFreq);
+        const float textH = m_scaleFactor*static_cast<float>(TextHeight);
+        for (float decade = 10.f; decade <= 20000.f; decade *= 10.f)
+            for (float mult : {1.f, 2.f, 5.f})
+            {
+                const float f = decade*mult;
+                if (f < m_mapMinFreq*0.999f || f > m_mapMaxFreq*1.001f)
+                    continue;
+                const String OutText = (f >= 1000.f) ? String(f/1000.f) + "k" : String(static_cast<int>(f));
+                const float ydelta = displayH*std::log(f/m_mapMinFreq)/logRange;
+                const float y = juce::jlimit(0.f, displayH-textH, displayH - ydelta - 0.5f*textH);
+                g.drawText(OutText,static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor),static_cast<int>(y),
+                        static_cast<int>(g_FreqMeter*m_scaleFactor),static_cast<int>(textH),juce::Justification::centred,true);
+            }
+    }
+    else
+    {
     g.drawImage(m_internalImg,wStartPic,0,static_cast<int>(0.8f*w),int(float(h)-m_scaleFactor*g_menuHeight+0.5),
                 0,hStart,static_cast<int>(m_internalWidth),heightInterval);
     // Add frequency scale
-    // Add frequency scale
-    int nrOfYTicks = 11;
-    float RangePerTick = float(m_maxDisplayFreq - m_minDisplayFreq)/(nrOfYTicks-1);
-    int TextHeight = 20;
+    RangePerTick = float(m_maxDisplayFreq - m_minDisplayFreq)/(nrOfYTicks-1);
     g.setFont(0.8*m_scaleFactor*TextHeight);
     for (auto kk = 0; kk < nrOfYTicks; ++kk)
     {
@@ -459,6 +490,7 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
         }
         g.drawText(OutText,x,y,static_cast<int>(g_FreqMeter*m_scaleFactor),static_cast<int>(m_scaleFactor*TextHeight),
                 juce::Justification::centred,true);
+    }
     }
 
     // Plot Colorbar
@@ -532,6 +564,9 @@ void JadeSpectrogramGUI::resized()
 
     m_pauseButton.setBounds(static_cast<int>(m_scaleFactor*g_PauseButton_x),  static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
                     static_cast<int>(m_scaleFactor*g_ButtonWidth),static_cast<int>(m_scaleFactor*g_ButtonHeight));
+    // lin/log switch in the gap between the pause button and the window selector
+    m_freqAxisButton.setBounds(static_cast<int>(m_scaleFactor*(g_PauseButton_x + g_ButtonWidth + 6)), static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
+                    static_cast<int>(m_scaleFactor*44), static_cast<int>(m_scaleFactor*g_ButtonHeight));
 
     int w = getWidth();
     int x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.8*w - m_scaleFactor*g_ButtonWidth);
@@ -560,6 +595,7 @@ void JadeSpectrogramGUI::timerCallback()
     float minValColor = m_DisplayMinColorSlider.getValue();
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
+    updateFrequencyMapping(); // log axis: follows the frequency sliders
 
     bool stilldataavailable;
     do
@@ -582,8 +618,8 @@ void JadeSpectrogramGUI::timerCallback()
                 std::fill(vec.begin(), vec.end(), 10.f*log10f(g_minValForLogSpectrogram));
             }
             m_exchangeSpectrum.resize(m_internalHeight);
-            m_internalImg = m_internalImg.rescaled(m_internalWidth,m_internalHeight);
             m_displaymem_writepos = 0;
+            updateFrequencyMapping(); // new number of bins: new image size (and log mapping)
         }
         stilldataavailable = m_processor.m_algo.getMemSlice(m_exchangeSpectrum);
         if (stilldataavailable)
@@ -593,15 +629,15 @@ void JadeSpectrogramGUI::timerCallback()
             if (m_isRunningDisplay)
             {
                 Image::BitmapData destData (m_internalImg, Image::BitmapData::writeOnly);                
-                for (size_t hh = 0; hh < m_internalHeight; ++hh)
+                for (size_t hh = 0; hh < m_imageRows; ++hh)
                 {
-                    float val = m_displaymem.at(m_displaymem_writepos).at(hh);
+                    float val = rowValue(m_displaymem.at(m_displaymem_writepos), hh);
 
                     unsigned int color = m_colorpalette.getRGBColor(val);
                     color = color|0xFF000000; // kein alpha blending
 
                     //m_internalImg.setPixelAt(neww,m_internalHeight-1-hh,juce::Colour(color));
-                    destData.setPixelColour (m_displaymem_writepos,m_internalHeight-1-hh,juce::Colour(color));
+                    destData.setPixelColour (m_displaymem_writepos,m_imageRows-1-hh,juce::Colour(color));
                 }
                 // plot red line at write position
                 int drawwidth = 1;
@@ -610,7 +646,7 @@ void JadeSpectrogramGUI::timerCallback()
 
                 if (m_internalHeight < 1024)
                     drawwidth +=2 ;
-                for (size_t hh = 0; hh < m_internalHeight; ++hh)
+                for (size_t hh = 0; hh < m_imageRows; ++hh)
                 {
 
                     for (int dd = 1 ; dd <= drawwidth ;++dd)
@@ -618,7 +654,7 @@ void JadeSpectrogramGUI::timerCallback()
                         size_t drawpos = m_displaymem_writepos + static_cast<size_t>(dd);
                         if (drawpos >= m_internalWidth)
                             drawpos -= m_internalWidth;
-                        destData.setPixelColour(drawpos,m_internalHeight-1-hh,juce::Colours::red);
+                        destData.setPixelColour(drawpos,m_imageRows-1-hh,juce::Colours::red);
 
                     }
                 }
@@ -640,8 +676,8 @@ void JadeSpectrogramGUI::timerCallback()
     if (!m_isRunningDisplay)
     {
         int startread = m_displaymem_writepos - m_newDataAvailable;
-        m_internalImg.moveImageSection(0,0,m_newDataAvailable,0,m_internalWidth-m_newDataAvailable,m_internalHeight);
-        const Image::BitmapData destData (m_internalImg, 0, 0, m_internalWidth, m_internalHeight, Image::BitmapData::readWrite);
+        m_internalImg.moveImageSection(0,0,m_newDataAvailable,0,m_internalWidth-m_newDataAvailable,m_imageRows);
+        const Image::BitmapData destData (m_internalImg, 0, 0, m_internalWidth, m_imageRows, Image::BitmapData::readWrite);
 
         for (size_t ww = m_internalWidth-m_newDataAvailable ; ww < m_internalWidth; ++ww)
         {
@@ -650,13 +686,13 @@ void JadeSpectrogramGUI::timerCallback()
                 readpos = m_internalWidth - static_cast<size_t>(-startread);
             else
                 readpos = static_cast<size_t>(startread);
-            for (size_t hh = 0; hh < m_internalHeight; ++hh)
+            for (size_t hh = 0; hh < m_imageRows; ++hh)
             {
-                float val = m_displaymem.at(readpos).at(hh);
+                float val = rowValue(m_displaymem.at(readpos), hh);
 
                 unsigned int color = m_colorpalette.getRGBColor(val);
                 color = color|0xFF000000; // kein alpha blending
-                destData.setPixelColour(ww,m_internalHeight-1-hh,juce::Colour(color));
+                destData.setPixelColour(ww,m_imageRows-1-hh,juce::Colour(color));
                 //m_internalImg.setPixelAt(ww,m_internalHeight-1-hh,juce::Colour(color));
             }
             startread++;
@@ -669,26 +705,26 @@ void JadeSpectrogramGUI::timerCallback()
     {
         m_recomputeAll = false;
         size_t newwstart = m_internalWidth-m_displaymem_writepos; // writepos < width, so > 0
-        const Image::BitmapData destData (m_internalImg, 0, 0, m_internalWidth, m_internalHeight, Image::BitmapData::readWrite);
+        const Image::BitmapData destData (m_internalImg, 0, 0, m_internalWidth, m_imageRows, Image::BitmapData::readWrite);
 
         for (size_t ww = 0; ww < m_internalWidth; ++ww)
         {
             size_t neww = ww+newwstart;
             if (neww>=m_internalWidth)
                 neww -= m_internalWidth;
-            for (size_t hh = 0; hh < m_internalHeight; ++hh)
+            for (size_t hh = 0; hh < m_imageRows; ++hh)
             {
-                float val = m_displaymem.at(ww).at(hh);
+                float val = rowValue(m_displaymem.at(ww), hh);
 
                 unsigned int color = m_colorpalette.getRGBColor(val);
                 color = color|0xFF000000; // kein alpha blending
                 if (m_isRunningDisplay)
                 {
-                    destData.setPixelColour (ww,m_internalHeight-1-hh,juce::Colour(color));
+                    destData.setPixelColour (ww,m_imageRows-1-hh,juce::Colour(color));
                 }
                 else
                 {
-                    destData.setPixelColour (neww,m_internalHeight-1-hh,juce::Colour(color));
+                    destData.setPixelColour (neww,m_imageRows-1-hh,juce::Colour(color));
                 }
             }
             if (m_isRunningDisplay)
@@ -700,7 +736,7 @@ void JadeSpectrogramGUI::timerCallback()
 
                 if (m_internalHeight < 1024)
                     drawwidth +=2 ;
-                for (size_t hh = 0; hh < m_internalHeight; ++hh)
+                for (size_t hh = 0; hh < m_imageRows; ++hh)
                 {
 
                     for (int dd = 1 ; dd <= drawwidth ;++dd)
@@ -708,7 +744,7 @@ void JadeSpectrogramGUI::timerCallback()
                         size_t drawpos = m_displaymem_writepos + static_cast<size_t>(dd);
                         if (drawpos >= m_internalWidth)
                             drawpos -= m_internalWidth;
-                        destData.setPixelColour(drawpos,m_internalHeight-1-hh,juce::Colours::red);
+                        destData.setPixelColour(drawpos,m_imageRows-1-hh,juce::Colours::red);
 
                     }
                 }
@@ -779,6 +815,98 @@ void JadeSpectrogramGUI::mouseExit (const MouseEvent& event)
     repaint();
 }
 
+void JadeSpectrogramGUI::setFreqAxisButtonText()
+{
+    // as the Run/Fix button: the label shows what a click does, highlighted while log is on
+    m_freqAxisButton.setButtonText(m_logFreqAxis ? "Lin" : "Log");
+    m_freqAxisButton.setToggleState(m_logFreqAxis, NotificationType::dontSendNotification);
+}
+
+void JadeSpectrogramGUI::freqAxisClicked()
+{
+    m_logFreqAxis = !m_logFreqAxis;
+    m_processor.setLogFreqAxis(m_logFreqAxis);
+    setFreqAxisButtonText();
+    updateFrequencyMapping();
+    repaint();
+}
+
+void JadeSpectrogramGUI::updateFrequencyMapping()
+{
+    const size_t bins = m_internalHeight;
+    if (!m_logFreqAxis || bins < 2)
+    {
+        if (!m_rowMap.empty() || m_imageRows != bins)
+        {
+            m_rowMap.clear();
+            m_imageRows = bins;
+            m_recomputeAll = true;
+        }
+    }
+    else
+    {
+        // displayed range: the frequency sliders, but at least g_logAxisMinFreq at the bottom
+        const float fmax = m_maxDisplayFreq;
+        const float fmin = std::min(std::max(m_minDisplayFreq, g_logAxisMinFreq), fmax/1.1f);
+        const float fs = m_processor.m_algo.getSamplerate();
+        const bool upToDate = m_rowMap.size() == g_logAxisRows && m_mapBins == bins
+            && std::abs(m_mapMinFreq - fmin) < 1e-3f && std::abs(m_mapMaxFreq - fmax) < 1e-3f
+            && std::abs(m_mapFs - fs) < 1e-3f;
+        if (!upToDate)
+        {
+            m_mapMinFreq = fmin; m_mapMaxFreq = fmax; m_mapBins = bins; m_mapFs = fs;
+            m_imageRows = g_logAxisRows;
+            m_rowMap.resize(g_logAxisRows);
+            const double binWidth = 0.5*double(fs)/double(bins-1); // Hz per bin
+            const double ratio = double(fmax)/double(fmin);
+            for (size_t r = 0; r < g_logAxisRows; ++r) // r = 0: bottom row
+            {
+                const double flo = fmin*std::pow(ratio, double(r)/double(g_logAxisRows));
+                const double fhi = fmin*std::pow(ratio, double(r+1)/double(g_logAxisRows));
+                const double blo = flo/binWidth, bhi = fhi/binWidth;
+                RowMap& m = m_rowMap[r];
+                if (bhi - blo > 1.0) // the row covers several bins: take their maximum (keeps narrow peaks)
+                {
+                    m.useMax = true;
+                    m.bin0 = std::min(static_cast<size_t>(std::ceil(blo)), bins-1);
+                    m.bin1 = std::max(m.bin0, std::min(static_cast<size_t>(std::floor(bhi)), bins-1));
+                    m.frac = 0.f;
+                }
+                else // less than one bin per row: interpolate between the neighbours
+                {
+                    const double bc = std::sqrt(flo*fhi)/binWidth;
+                    m.useMax = false;
+                    m.bin0 = std::min(static_cast<size_t>(bc), bins-2);
+                    m.bin1 = m.bin0 + 1;
+                    m.frac = static_cast<float>(juce::jlimit(0.0, 1.0, bc - double(m.bin0)));
+                }
+            }
+            m_recomputeAll = true;
+        }
+    }
+    if (static_cast<size_t>(m_internalImg.getWidth()) != m_internalWidth
+        || static_cast<size_t>(m_internalImg.getHeight()) != m_imageRows)
+    {
+        m_internalImg = m_internalImg.rescaled(static_cast<int>(m_internalWidth), static_cast<int>(m_imageRows));
+        m_recomputeAll = true;
+    }
+}
+
+float JadeSpectrogramGUI::rowValue(const std::vector<float>& column, size_t row) const
+{
+    if (m_rowMap.empty()) // linear axis: row = bin
+        return column[row];
+    const RowMap& m = m_rowMap[row];
+    if (m.useMax)
+    {
+        float v = column[m.bin0];
+        for (size_t b = m.bin0 + 1; b <= m.bin1; ++b)
+            v = std::max(v, column[b]);
+        return v;
+    }
+    return column[m.bin0] + m.frac*(column[m.bin1] - column[m.bin0]);
+}
+
 void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display)
 {
     if (!m_mouseInDisplay || !display.contains(m_mousePos))
@@ -820,7 +948,12 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
     if (y >= 0 && y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
     {
         
-        float freq = (1.0-float(y)/(float(h)-m_scaleFactor*g_menuHeight))*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
+        const float yrel = 1.f - float(y)/(float(h)-m_scaleFactor*g_menuHeight); // 0 bottom ... 1 top
+        float freq;
+        if (!m_rowMap.empty()) // logarithmic axis
+            freq = m_mapMinFreq * std::pow(m_mapMaxFreq/m_mapMinFreq, yrel);
+        else
+            freq = yrel*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
         // recompute freq to freq index in the internal memory
         float fshalf = 0.5f*m_processor.m_algo.getSamplerate();
         size_t freqindex  = static_cast<size_t> ((m_internalHeight-1) * freq / fshalf + 0.5f);
