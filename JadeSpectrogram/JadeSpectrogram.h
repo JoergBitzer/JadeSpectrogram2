@@ -206,21 +206,33 @@ private:
     void drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display);
     juce::Point<int> m_mousePos;
 
-    // frequency axis: linear (image row = FFT bin, paint() crops the range) or logarithmic
-    // (g_logAxisRows image rows, each mapped to the bins of its frequency interval)
+    // Frequency axis and image layout (m_axisMap):
+    //  Bins:      linear axis with at most one bin per screen pixel: image row = FFT bin,
+    //             paint() draws the visible range with an exact transform
+    //  LinearMax: linear axis with more bins than pixels: one image row per screen pixel,
+    //             each the maximum of its bins (narrow lines do not disappear)
+    //  Log:       logarithmic axis, g_logAxisRows image rows
+    // In LinearMax and Log the image covers exactly the displayed range (m_mapMinFreq ... m_mapMaxFreq).
     TextButton m_freqAxisButton;
     void freqAxisClicked();
     void setFreqAxisButtonText();
     bool m_logFreqAxis = false;
     size_t m_imageRows = 1; // height of m_internalImg
     struct RowMap { size_t bin0; size_t bin1; float frac; bool useMax; };
-    std::vector<RowMap> m_rowMap; // empty: linear axis
+    enum class AxisMap { Bins, LinearMax, Log };
+    AxisMap m_axisMap = AxisMap::Bins;
+    std::vector<RowMap> m_rowMap; // empty for Bins
     float m_mapMinFreq = 0.f; // frequency range and data the log mapping was built for
     float m_mapMaxFreq = 0.f;
     size_t m_mapBins = 0;
     float m_mapFs = 0.f;
     void updateFrequencyMapping(); // rebuilds the mapping (and resizes the image) if needed
     float rowValue(const std::vector<float>& column, size_t row) const;
+    void updateDisplayRange(); // frequency sliders -> m_minDisplayFreq, m_maxDisplayFreq
+    float displayHeight() const; // height of the analysis display in pixels
+    float frequencyToY(float freq, float displayH) const; // 0 = top of the display
+    float yToFrequency(float y, float displayH) const;
+    void drawFrequencyAxis(juce::Graphics& g, int x, float displayH, float textH) const;
     bool m_mouseInDisplay = false; // crosshair is drawn while the mouse is over the display
     void runClicked();
     bool m_isPaused;

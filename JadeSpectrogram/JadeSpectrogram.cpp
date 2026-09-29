@@ -337,6 +337,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_logFreqAxis = m_processor.getLogFreqAxis();
     setFreqAxisButtonText();
     m_freqAxisButton.onClick = [this](){freqAxisClicked();};
+    updateDisplayRange();
     // no addAndMakeVisible here: the editor shows the button above the frequency axis (title bar)
     updateFrequencyMapping();
 
@@ -399,21 +400,8 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
 
     float fs = m_processor.m_algo.getSamplerate();
     
-    m_minDisplayFreq = static_cast<float>(exp(m_DisplayMinFreqSlider.getValue()));
-    m_maxDisplayFreq = static_cast<float>(exp(m_DisplayMaxFreqSlider.getValue()));
-
-    if (m_minDisplayFreq >= fs*0.5f)
-        m_minDisplayFreq = 0.9f*fs*0.5f;
-    if (m_maxDisplayFreq >= fs*0.5f)
-        m_maxDisplayFreq = fs*0.5f;
-
-    if (1.1f*m_minDisplayFreq >= m_maxDisplayFreq)
-    {
-        //m_minDisplayFreq = 0.8f*m_maxDisplayFreq;
-        m_maxDisplayFreq = 1.1f*m_minDisplayFreq;
-        m_DisplayMaxFreqSlider.setValue(log(1.1f*m_minDisplayFreq));
-        m_DisplayMinFreqSlider.setValue(log(m_minDisplayFreq));
-    }
+    // the frequency range (m_minDisplayFreq, m_maxDisplayFreq) is set in timerCallback together with
+    // the image (updateDisplayRange), so image, axis and readout always belong together
 
 
     int wStartPic =static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter));
@@ -421,85 +409,30 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     int TextHeight = 20;
     int nrOfYTicks = 11;
     float RangePerTick = 0.f;
-    if (!m_rowMap.empty()) // logarithmic axis: the image already covers exactly the displayed range
+    const float displayH = displayHeight();
+    if (m_axisMap != AxisMap::Bins) // the image covers exactly the displayed range
     {
         g.drawImage(m_internalImg,wStartPic,0,static_cast<int>(0.8f*w),int(float(h)-m_scaleFactor*g_menuHeight+0.5),
                     0,0,static_cast<int>(m_internalWidth),static_cast<int>(m_imageRows));
-        // ticks at 1, 2, 5 x 10^k
-        g.setFont(0.8f*m_scaleFactor*static_cast<float>(TextHeight));
-        const float displayH = float(h)-m_scaleFactor*g_menuHeight;
-        const float logRange = std::log(m_mapMaxFreq/m_mapMinFreq);
-        const float textH = m_scaleFactor*static_cast<float>(TextHeight);
-        for (float decade = 10.f; decade <= 20000.f; decade *= 10.f)
-            for (float mult : {1.f, 2.f, 5.f})
-            {
-                const float f = decade*mult;
-                if (f < m_mapMinFreq*0.999f || f > m_mapMaxFreq*1.001f)
-                    continue;
-                const String OutText = (f >= 1000.f) ? String(f/1000.f) + "k" : String(static_cast<int>(f));
-                const float ydelta = displayH*std::log(f/m_mapMinFreq)/logRange;
-                const float y = juce::jlimit(0.f, displayH-textH, displayH - ydelta - 0.5f*textH);
-                g.drawText(OutText,static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor),static_cast<int>(y),
-                        static_cast<int>(g_FreqMeter*m_scaleFactor),static_cast<int>(textH),juce::Justification::centred,true);
-            }
     }
     else
     {
     // Linear axis: image row H-1-k shows bin k (frequency k*binWidth); the centre of that row has to
     // land exactly on the axis position of k*binWidth. A transform instead of an integer source
     // rectangle, so neither the half-row offset nor rounding to whole rows shifts the bins.
-    {
         const int displayW = static_cast<int>(0.8f*w);
-        const int displayH = int(float(h)-m_scaleFactor*g_menuHeight+0.5);
         const float binWidth = 0.5f*fs/static_cast<float>(m_internalHeight-1);
         const float rowsShown = (m_maxDisplayFreq - m_minDisplayFreq)/binWidth; // image rows between min and max
         const float rowTop = static_cast<float>(m_internalHeight) - 0.5f - m_maxDisplayFreq/binWidth; // image coordinate of max
         const float sx = static_cast<float>(displayW)/static_cast<float>(m_internalWidth);
-        const float sy = static_cast<float>(displayH)/rowsShown;
+        const float sy = displayH/rowsShown;
         juce::Graphics::ScopedSaveState state(g);
-        g.reduceClipRegion(wStartPic, 0, displayW, displayH);
+        g.reduceClipRegion(wStartPic, 0, displayW, static_cast<int>(displayH));
         g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
                                                   .translated(static_cast<float>(wStartPic), -rowTop*sy));
     }
-    // Add frequency scale
-    RangePerTick = float(m_maxDisplayFreq - m_minDisplayFreq)/(nrOfYTicks-1);
-    g.setFont(0.8*m_scaleFactor*TextHeight);
-    for (auto kk = 0; kk < nrOfYTicks; ++kk)
-    {
-        float newExaktFreq = int(m_minDisplayFreq + RangePerTick*kk + 0.5);
-        String OutText;
-        if (newExaktFreq >= 1000.f)
-        {
-            newExaktFreq = int(newExaktFreq*0.02f +0.5f)*50.f;
-            OutText += String(newExaktFreq/1000.f);
-            OutText += "k";
-        }
-        else
-        {
-            if (newExaktFreq >= 150.f)
-            {
-                newExaktFreq = int(newExaktFreq*0.2f +0.5f)*5.f;
-                OutText += String(newExaktFreq);
-            }
-            else
-            {
-                 OutText += String(newExaktFreq);
-            }
-        }
-
-        int ydelta = (h-m_scaleFactor*g_menuHeight)* (newExaktFreq-m_minDisplayFreq)/(m_maxDisplayFreq - m_minDisplayFreq);
-        int x = wStartPic-g_FreqMeter*m_scaleFactor;
-        int y ;
-        if (kk < nrOfYTicks-1)
-            y = h-m_scaleFactor*g_menuHeight-0.5*TextHeight*m_scaleFactor - ydelta;
-        else
-        {
-            y = h-m_scaleFactor*g_menuHeight - ydelta;
-        }
-        g.drawText(OutText,x,y,static_cast<int>(g_FreqMeter*m_scaleFactor),static_cast<int>(m_scaleFactor*TextHeight),
-                juce::Justification::centred,true);
-    }
-    }
+    drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), displayH,
+                      m_scaleFactor*static_cast<float>(TextHeight));
 
     // Plot Colorbar
     int cbHeight = static_cast<int>(h-m_scaleFactor*g_menuHeight);
@@ -600,7 +533,8 @@ void JadeSpectrogramGUI::timerCallback()
     float minValColor = m_DisplayMinColorSlider.getValue();
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
-    updateFrequencyMapping(); // log axis: follows the frequency sliders
+    updateDisplayRange();     // frequency sliders -> displayed range
+    updateFrequencyMapping(); // image layout for this range (LinearMax, Log)
 
     bool stilldataavailable;
     do
@@ -832,17 +766,137 @@ void JadeSpectrogramGUI::freqAxisClicked()
     m_logFreqAxis = !m_logFreqAxis;
     m_processor.setLogFreqAxis(m_logFreqAxis);
     setFreqAxisButtonText();
-    updateFrequencyMapping();
-    repaint();
+    timerCallback(); // new mapping and image at once (also repaints)
+}
+
+void JadeSpectrogramGUI::updateDisplayRange()
+{
+    const float fs = m_processor.m_algo.getSamplerate();
+    m_minDisplayFreq = static_cast<float>(exp(m_DisplayMinFreqSlider.getValue()));
+    m_maxDisplayFreq = static_cast<float>(exp(m_DisplayMaxFreqSlider.getValue()));
+
+    if (m_minDisplayFreq >= fs*0.5f)
+        m_minDisplayFreq = 0.9f*fs*0.5f;
+    if (m_maxDisplayFreq >= fs*0.5f)
+        m_maxDisplayFreq = fs*0.5f;
+
+    if (1.1f*m_minDisplayFreq >= m_maxDisplayFreq)
+    {
+        //m_minDisplayFreq = 0.8f*m_maxDisplayFreq;
+        m_maxDisplayFreq = 1.1f*m_minDisplayFreq;
+        m_DisplayMaxFreqSlider.setValue(log(1.1f*m_minDisplayFreq));
+        m_DisplayMinFreqSlider.setValue(log(m_minDisplayFreq));
+    }
+}
+
+float JadeSpectrogramGUI::displayHeight() const
+{
+    // whole pixels, rounded as in paint() (image, clip, axis and readout use the same height)
+    return static_cast<float>(int(float(getHeight())-m_scaleFactor*g_menuHeight+0.5f));
+}
+
+float JadeSpectrogramGUI::frequencyToY(float freq, float displayH) const
+{
+    if (m_axisMap == AxisMap::Log)
+        return displayH*(1.f - std::log(freq/m_mapMinFreq)/std::log(m_mapMaxFreq/m_mapMinFreq));
+    const float fmin = (m_axisMap == AxisMap::LinearMax) ? m_mapMinFreq : m_minDisplayFreq;
+    const float fmax = (m_axisMap == AxisMap::LinearMax) ? m_mapMaxFreq : m_maxDisplayFreq;
+    return displayH*(fmax - freq)/(fmax - fmin);
+}
+
+float JadeSpectrogramGUI::yToFrequency(float y, float displayH) const
+{
+    const float yrel = 1.f - y/displayH; // 0 bottom ... 1 top
+    if (m_axisMap == AxisMap::Log)
+        return m_mapMinFreq * std::pow(m_mapMaxFreq/m_mapMinFreq, yrel);
+    const float fmin = (m_axisMap == AxisMap::LinearMax) ? m_mapMinFreq : m_minDisplayFreq;
+    const float fmax = (m_axisMap == AxisMap::LinearMax) ? m_mapMaxFreq : m_maxDisplayFreq;
+    return fmin + yrel*(fmax - fmin);
+}
+
+void JadeSpectrogramGUI::drawFrequencyAxis(juce::Graphics& g, int x, float displayH, float textH) const
+{
+    const float fmin = (m_axisMap == AxisMap::Bins) ? m_minDisplayFreq : m_mapMinFreq;
+    const float fmax = (m_axisMap == AxisMap::Bins) ? m_maxDisplayFreq : m_mapMaxFreq;
+    if (!(fmax > fmin) || displayH <= textH)
+        return;
+    const int maxLabels = juce::jmax(2, static_cast<int>(displayH/(1.4f*textH)));
+
+    // candidates: round steps, the smallest one whose labels still fit (never an empty axis)
+    std::vector<double> ticks;
+    double step = 0.0;
+    auto linearTicks = [&]() {
+        for (double s : {10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0})
+        {
+            ticks.clear();
+            for (double f = std::ceil(fmin/s)*s; f <= fmax*1.0001; f += s)
+                ticks.push_back(f);
+            step = s;
+            if (static_cast<int>(ticks.size()) <= maxLabels)
+                break;
+        }
+    };
+    if (m_axisMap == AxisMap::Log)
+    {
+        // 1-2-5 per decade; a strongly zoomed range (fewer than 3 of them) gets round linear steps
+        for (double decade = 10.0; decade <= 20000.0; decade *= 10.0)
+            for (double mult : {1.0, 2.0, 5.0})
+                if (decade*mult >= fmin*0.999 && decade*mult <= fmax*1.001)
+                    ticks.push_back(decade*mult);
+        if (ticks.size() < 3)
+            linearTicks();
+    }
+    else
+        linearTicks();
+
+    // labels: whole Hz below 1 kHz (steps >= 10 Hz: last digit 0), kHz above, with as many
+    // decimals as the step needs (1.5k, 1.02k); whole kHz without decimals (1k, 10k)
+    int kHzDecimals = 0;
+    if (step > 0.0 && step < 1000.0)
+        kHzDecimals = (step >= 100.0) ? 1 : 2;
+    g.setFont(0.8f*textH);
+    for (double f : ticks)
+    {
+        String text;
+        if (f >= 1000.0)
+        {
+            const bool wholeKHz = std::abs(f/1000.0 - std::round(f/1000.0)) < 1e-6;
+            text = (kHzDecimals == 0 || wholeKHz) ? String(juce::roundToInt(f/1000.0)) + "k" : String(f/1000.0, kHzDecimals) + "k";
+        }
+        else
+            text = String(juce::roundToInt(f));
+        const float y = juce::jlimit(0.f, displayH-textH, frequencyToY(static_cast<float>(f), displayH) - 0.5f*textH);
+        g.drawText(text, x, static_cast<int>(y), static_cast<int>(g_FreqMeter*m_scaleFactor), static_cast<int>(textH),
+                   juce::Justification::centred, true);
+    }
 }
 
 void JadeSpectrogramGUI::updateFrequencyMapping()
 {
     const size_t bins = m_internalHeight;
-    if (!m_logFreqAxis || bins < 2)
+    const float fs = m_processor.m_algo.getSamplerate();
+    const float displayH = displayHeight();
+    AxisMap kind = AxisMap::Bins;
+    float fmin = m_minDisplayFreq, fmax = m_maxDisplayFreq;
+    size_t rows = bins;
+    if (bins >= 2 && m_logFreqAxis)
     {
-        if (!m_rowMap.empty() || m_imageRows != bins)
+        kind = AxisMap::Log;
+        // displayed range: the frequency sliders, but at least g_logAxisMinFreq at the bottom
+        fmin = std::min(std::max(m_minDisplayFreq, g_logAxisMinFreq), fmax/1.1f);
+        rows = g_logAxisRows;
+    }
+    else if (bins >= 2 && displayH >= 2.f && (fmax - fmin)/(0.5f*fs/float(bins-1)) > displayH)
+    {
+        kind = AxisMap::LinearMax; // more bins than pixel rows in the visible range
+        rows = static_cast<size_t>(displayH);
+    }
+
+    if (kind == AxisMap::Bins)
+    {
+        if (m_axisMap != AxisMap::Bins || m_imageRows != bins)
         {
+            m_axisMap = AxisMap::Bins;
             m_rowMap.clear();
             m_imageRows = bins;
             m_recomputeAll = true;
@@ -850,24 +904,23 @@ void JadeSpectrogramGUI::updateFrequencyMapping()
     }
     else
     {
-        // displayed range: the frequency sliders, but at least g_logAxisMinFreq at the bottom
-        const float fmax = m_maxDisplayFreq;
-        const float fmin = std::min(std::max(m_minDisplayFreq, g_logAxisMinFreq), fmax/1.1f);
-        const float fs = m_processor.m_algo.getSamplerate();
-        const bool upToDate = m_rowMap.size() == g_logAxisRows && m_mapBins == bins
+        const bool upToDate = m_axisMap == kind && m_rowMap.size() == rows && m_mapBins == bins
             && std::abs(m_mapMinFreq - fmin) < 1e-3f && std::abs(m_mapMaxFreq - fmax) < 1e-3f
             && std::abs(m_mapFs - fs) < 1e-3f;
         if (!upToDate)
         {
+            m_axisMap = kind;
             m_mapMinFreq = fmin; m_mapMaxFreq = fmax; m_mapBins = bins; m_mapFs = fs;
-            m_imageRows = g_logAxisRows;
-            m_rowMap.resize(g_logAxisRows);
+            m_imageRows = rows;
+            m_rowMap.resize(rows);
             const double binWidth = 0.5*double(fs)/double(bins-1); // Hz per bin
             const double ratio = double(fmax)/double(fmin);
-            for (size_t r = 0; r < g_logAxisRows; ++r) // r = 0: bottom row
+            // lower edge of row r (r = 0: bottom row), t = r/rows
+            auto edge = [&](double t) { return (kind == AxisMap::Log) ? fmin*std::pow(ratio, t) : fmin + t*(fmax - fmin); };
+            for (size_t r = 0; r < rows; ++r)
             {
-                const double flo = fmin*std::pow(ratio, double(r)/double(g_logAxisRows));
-                const double fhi = fmin*std::pow(ratio, double(r+1)/double(g_logAxisRows));
+                const double flo = edge(double(r)/double(rows));
+                const double fhi = edge(double(r+1)/double(rows));
                 const double blo = flo/binWidth, bhi = fhi/binWidth;
                 RowMap& m = m_rowMap[r];
                 if (bhi - blo > 1.0) // the row covers several bins: take their maximum (keeps narrow peaks)
@@ -879,7 +932,8 @@ void JadeSpectrogramGUI::updateFrequencyMapping()
                 }
                 else // less than one bin per row: interpolate between the neighbours
                 {
-                    const double bc = std::sqrt(flo*fhi)/binWidth;
+                    // row centre: geometric for log rows, arithmetic for linear rows
+                    const double bc = ((kind == AxisMap::Log) ? std::sqrt(flo*fhi) : 0.5*(flo + fhi))/binWidth;
                     m.useMax = false;
                     m.bin0 = std::min(static_cast<size_t>(bc), bins-2);
                     m.bin1 = m.bin0 + 1;
@@ -899,7 +953,7 @@ void JadeSpectrogramGUI::updateFrequencyMapping()
 
 float JadeSpectrogramGUI::rowValue(const std::vector<float>& column, size_t row) const
 {
-    if (m_rowMap.empty()) // linear axis: row = bin
+    if (m_axisMap == AxisMap::Bins) // row = bin
         return column[row];
     const RowMap& m = m_rowMap[row];
     if (m.useMax)
@@ -953,12 +1007,10 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
     if (y >= 0 && y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
     {
         
-        const float yrel = 1.f - float(y)/(float(h)-m_scaleFactor*g_menuHeight); // 0 bottom ... 1 top
-        float freq;
-        if (!m_rowMap.empty()) // logarithmic axis
-            freq = m_mapMinFreq * std::pow(m_mapMaxFreq/m_mapMinFreq, yrel);
-        else
-            freq = yrel*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
+        const float displayH = displayHeight();
+        const float freq = yToFrequency(float(y), displayH);
+        // mapped image (LinearMax, Log): the readout shows the value of the image row, i.e. what is drawn
+        const size_t imageRow = std::min(m_imageRows-1, static_cast<size_t>(juce::jmax(0.f, (1.f - (float(y)+0.5f)/displayH)*float(m_imageRows))));
         // recompute freq to freq index in the internal memory
         float fshalf = 0.5f*m_processor.m_algo.getSamplerate();
         size_t freqindex  = static_cast<size_t> ((m_internalHeight-1) * freq / fshalf + 0.5f);
@@ -968,6 +1020,7 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
         float maxw = 0.8*w;
         size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * static_cast<size_t>(x-wstart)/maxw +0.5); // x > wstart (see if)
         float val = -100.f;
+        size_t column = timeindex;
         if (m_isRunningDisplay)
         {   
             val = m_displaymem.at(timeindex).at(freqindex);
@@ -980,8 +1033,10 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
                                                                  : m_displaymem_writepos + m_internalWidth - distanz;
 
             val = m_displaymem.at(memindex).at(freqindex);
-
+            column = memindex;
         }
+        if (m_axisMap != AxisMap::Bins)
+            val = rowValue(m_displaymem.at(column), imageRow);
 
         MidiMessage msg;
         int midinotenumber =  int(log(freq/440.0)/log(2) * 12 + 69 + 0.5);
