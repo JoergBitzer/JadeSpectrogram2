@@ -11,19 +11,27 @@ refuses to open them, run `xattr -cr <path to the plugin or app>` in the Termina
 Each zip contains the manual ([docs/ManualJadeSpectrogram2.pdf](docs/ManualJadeSpectrogram2.pdf)),
 a ReadMeFirst.txt with the installation steps and the license files.
 
-## What is new
+## What is new in 2.0: the musical spectrogram
+
+1. Keyboard overlay: semitone bands and note names over the spectrogram
+2. BPM grid: bars, beats and subdivisions (up to 1/16 beat) from the host tempo, exact also
+   after tempo changes, jumps and loops
+3. Logarithmic frequency axis (switchable), exact linear axis with max per pixel
+4. Crosshair with frequency, note and level at the mouse position
+5. Time axis in seconds, 10 s memory, time zoom
+6. Range sliders for the frequency, colour and time range
+7. Averaging along time, overlap 50 % / 75 %
+8. PNG export of the visible spectrogram with its axes
+9. All settings are stored with the project
+10. Zero latency: a pure analyzer, the audio passes through unchanged; changing FFT size,
+    window or overlap causes no dropouts
+
+The full release notes are in the appendix of the [manual](docs/ManualJadeSpectrogram2.pdf).
 
 ### Code basis and build process
 1. The new version is self contained. Everything needed to build is in this repository. Clone with --recursive to get the JUCE submodule
 2. No dependencies from Eigen anymore (uses the internal FFT from TGMStaticLib, a fast real-valued FFT by Uwe Simmer)
-3. The memory exchange is now block free, by using block-free FiFOs between processor and GUI
-   
-
-### new features
-1. Added the Level for the mouse readout 
-2. The default colormap is now plasma
-3. Zero latency: a pure analyzer, the audio passes through unchanged (1.3)
-4. Changing FFT size or window while the audio runs causes no dropouts (1.3)
+3. The memory exchange between processor and GUI is lock-free (single-producer/single-consumer FIFO)
 
 ## Build from source
 
