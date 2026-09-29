@@ -45,9 +45,9 @@ add_subdirectory(JUCE)                    # If you've put JUCE in a subdirectory
 # this is for the eigen library (https://gitlab.com/libeigen/eigen)
 # include_directories(Libs/eigen;Libs/eigen/unsupported)
 
-# and the TGM Tools
-include_directories(TGMStaticLib)
-add_subdirectory(TGMStaticLib)
+# and the TGM Tools: the plugin only needs the FFT (TGMStaticLib/FFT.cpp, no JUCE dependency),
+# which JadeSpectrogram/CMakeLists.txt compiles directly. The library itself is not built, since
+# it links juce_gui_basics and would compile a second copy of the JUCE modules.
 
 
 # if you have access zo the vst2.4 sdk (and the license from Steinberg)

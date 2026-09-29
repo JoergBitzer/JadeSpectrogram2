@@ -6,7 +6,7 @@
 
 set(TARGET_NAME JadeSpectrogram)
 
-project(${TARGET_NAME} VERSION 1.3.3)
+project(${TARGET_NAME} VERSION 1.3.4)
 
 configure_file(Versioning.h.in Versioning.h)
 
@@ -61,6 +61,10 @@ juce_generate_juce_header(${TARGET_NAME})
 # CMake command.
 
 
+# the fast real-valued FFT by Uwe Simmer from TGMStaticLib (external code: no warnings for it)
+set(TGM_FFT_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../TGMStaticLib/FFT.cpp)
+set_source_files_properties(${TGM_FFT_SOURCE} PROPERTIES COMPILE_OPTIONS $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
+
 target_sources(${TARGET_NAME}
     PRIVATE
         PluginEditor.cpp
@@ -73,6 +77,7 @@ target_sources(${TARGET_NAME}
         tools/MidiModPitchState.cpp
         tools/PresetHandler.cpp
         tools/SynchronBlockProcessor.cpp
+        ${TGM_FFT_SOURCE}
         )
 
 
@@ -132,7 +137,6 @@ target_link_libraries(${TARGET_NAME}
         # AudioPluginData           # If we'd created a binary data target, we'd link to it here
         ${TARGET_NAME}-binary # or here if we used the recursice method
         juce::juce_audio_utils
-        TGMStaticLib
         # juce::juce_opengl  # if we want to use opengl
     PUBLIC
         juce::juce_recommended_config_flags
@@ -141,4 +145,5 @@ target_link_libraries(${TARGET_NAME}
 
 target_include_directories(${TARGET_NAME} PUBLIC
         "${PROJECT_BINARY_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../TGMStaticLib"
         )        
