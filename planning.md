@@ -172,7 +172,9 @@ final layout below is the target.
    the same boundaries as the readout), lines at E/F and B/C, names at C and at every note when
    zoomed; thin bands fade out on the linear axis. (item 8): switchable, small transparent overlay of the spectrogram with a musical keyboard (white and black stripes) and the note
    names at their frequencies; button icon: a small keyboard with black and white keys (max 8 keys).
-8. **1.13.0 BPM grid** (item 10): switched with a metronome icon button (drawn as a path);
+8. ~~**1.13.0 BPM grid**~~ -- done: beat position of each slice end from the host (SliceInfo),
+   bar/beat/subdivision lines (1, 1/2, 1/4, 1/8 beat; text instead of note symbols, which many
+   fonts lack), finer levels left out below 5 px spacing, none at stops/jumps. (item 10): switched with a metronome icon button (drawn as a path);
    BPM from the host, displayed in the title bar; vertical
    lines at every beat, 1/2, 1/4 or 1/8 note, drawn on top of the spectrogram. Resolution
    box with note symbols, only visible while the grid is on; resolution is a parameter.

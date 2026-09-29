@@ -16,6 +16,13 @@
 struct SliceInfo
 {
     size_t hop = 0; // samples between this slice and the previous one
+    // musical position of the end of the slice (from the host); hasPpq = false: no host tempo
+    bool hasPpq = false;
+    double ppq = 0.0;          // position in quarter notes
+    double barStartPpq = 0.0;  // a bar start (bar lines at barStartPpq + k*barLengthPpq)
+    float barLengthPpq = 4.f;  // numerator * 4 / denominator
+    float beatPpq = 1.f;       // 4 / denominator
+    float bpm = 0.f;
 };
 
 class TwoDimBlockFreeFiFO

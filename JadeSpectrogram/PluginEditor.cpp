@@ -28,8 +28,9 @@ JadeSpectrogramAudioProcessorEditor::JadeSpectrogramAudioProcessorEditor (JadeSp
 
     // from here your algo editor ---------
     addAndMakeVisible(m_editor);
-    addAndMakeVisible(m_editor.getFreqAxisButton()); // above the frequency axis, in the title bar
-    addAndMakeVisible(m_editor.getKeyboardButton());  // title bar, right of the title image
+    for (auto* control : m_editor.getTitleBarControls()) // Lin/Log, keyboard, BPM grid: in the title bar
+        addChildComponent(control);
+    m_editor.setTitleBarVisible(true);
     m_TitleImage = ImageFileFormat::loadFrom(BinaryData::Title_png, BinaryData::Title_pngSize);
     //m_JadeLogo = ImageFileFormat::loadFrom(BinaryData::LogoJadeHochschule_jpg, BinaryData::LogoJadeHochschule_jpgSize);
     m_JadeLogo = ImageFileFormat::loadFrom(BinaryData::LogoJadeHochschuleTrans_png, BinaryData::LogoJadeHochschuleTrans_pngSize);
@@ -50,8 +51,7 @@ void JadeSpectrogramAudioProcessorEditor::paint (juce::Graphics& g)
     if (m_aboutboxvisible == true)
     {
         m_editor.setVisible(false);
-        m_editor.getFreqAxisButton().setVisible(false);
-        m_editor.getKeyboardButton().setVisible(false);
+        m_editor.setTitleBarVisible(false);
         g.fillAll (Colour::fromFloatRGBA(0.352941176470588f, 0.372549019607843f, 0.337254901960784f, 0.5f));
         g.drawImage(m_AboutBox, width/2-m_AboutBox.getWidth()/2,height/2-m_AboutBox.getHeight()/2,
         m_AboutBox.getWidth(), m_AboutBox.getHeight(), 0, 0, m_AboutBox.getWidth(),m_AboutBox.getHeight());
@@ -61,8 +61,7 @@ void JadeSpectrogramAudioProcessorEditor::paint (juce::Graphics& g)
     {
         g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
         m_editor.setVisible(true);
-        m_editor.getFreqAxisButton().setVisible(true);
-        m_editor.getKeyboardButton().setVisible(true);
+        m_editor.setTitleBarVisible(true);
 
     }
     // (Our component is opaque, so we must completely fill the background with a solid colour)
@@ -115,13 +114,7 @@ void JadeSpectrogramAudioProcessorEditor::resized()
     
     //m_editor.setBounds(0, 0, getWidth(), height);
     m_editor.setBounds(scaleFactor*g_spec_x,scaleFactor*g_spec_y,scaleFactor*g_spec_width,scaleFactor*g_spec_height);
-    // lin/log button in the title bar, left of the title, exactly above the frequency axis labels
-    m_editor.getFreqAxisButton().setBounds(static_cast<int>(scaleFactor*(g_spec_x + g_SliderWidth)), static_cast<int>(scaleFactor*(g_spec_y - 25)),
-                                            static_cast<int>(scaleFactor*g_FreqMeter), static_cast<int>(scaleFactor*g_ButtonHeight));
-    // title bar controls right of the title image (500 px wide, starting at g_spec_x + 60)
-    const float titleEnd = static_cast<float>(g_spec_x + 60 + 500 + 10);
-    m_editor.getKeyboardButton().setBounds(static_cast<int>(scaleFactor*titleEnd), static_cast<int>(scaleFactor*(g_spec_y - 25)),
-                                           static_cast<int>(scaleFactor*30), static_cast<int>(scaleFactor*g_ButtonHeight));
+    m_editor.setTitleBarBounds(scaleFactor); // Lin/Log above the frequency axis, the others right of the title
 
     #endif                        
 #endif

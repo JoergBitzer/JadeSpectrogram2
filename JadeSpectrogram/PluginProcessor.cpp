@@ -194,6 +194,33 @@ void JadeSpectrogramAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // Alternatively, you can process the samples with the channels
     // interleaved by keeping the same state.
 
+    // host tempo and position for the BPM grid (each slice gets its beat position)
+    JadeSpectrogramAudio::HostPosition hostPosition;
+    if (auto* hostPlayHead = getPlayHead())
+    {
+        if (auto position = hostPlayHead->getPosition())
+        {
+            const auto ppq = position->getPpqPosition();
+            const auto bpm = position->getBpm();
+            if (ppq.hasValue() && bpm.hasValue())
+            {
+                hostPosition.hasPpq = true;
+                hostPosition.ppq = *ppq;
+                hostPosition.bpm = *bpm;
+            }
+            if (const auto barStart = position->getPpqPositionOfLastBarStart())
+            {
+                hostPosition.hasBarStart = true;
+                hostPosition.barStartPpq = *barStart;
+            }
+            if (const auto sig = position->getTimeSignature())
+            {
+                hostPosition.numerator = sig->numerator;
+                hostPosition.denominator = sig->denominator;
+            }
+        }
+    }
+    m_algo.setHostPosition(hostPosition);
     m_algo.processBlock(buffer,midiMessages);
 
 #if WITH_MIDIKEYBOARD  

@@ -71,6 +71,8 @@ namespace JadeParamID
     inline const juce::String timeStart {"TimeStart"}; // visible part of the time window,
     inline const juce::String timeEnd {"TimeEnd"};     // fractions 0 ... 1 (1 = right edge)
     inline const juce::String keyboardOverlay {"KeyboardOverlay"}; // piano-roll bands over the spectrogram
+    inline const juce::String bpmGrid {"BpmGrid"};             // vertical lines at bars, beats, subdivisions
+    inline const juce::String bpmResolution {"BpmResolution"}; // 0: beat, 1: 1/2, 2: 1/4, 3: 1/8 beat
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -120,6 +122,17 @@ public:
 	// averaging time constant in ms (tests without parameters; otherwise the Averaging parameter)
 	void setAveragingMs(float tauMs){m_averagingMs.store(tauMs);};
 	void setOverlap(size_t overlapIndex){m_requestedOverlap.store(std::min(overlapIndex, g_nrOfOverlaps-1));}; // tests
+	// position of the host at the start of the next processBlock (audio thread, before processBlock)
+	struct HostPosition
+	{
+		bool hasPpq = false;       // ppq and bpm known
+		double ppq = 0.0;
+		double bpm = 0.0;
+		bool hasBarStart = false;
+		double barStartPpq = 0.0;
+		int numerator = 4, denominator = 4;
+	};
+	void setHostPosition(const HostPosition& position){m_hostPosition = position;};
 	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
 	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
 	SliceInfo getNextMemSliceInfo() const { return m_fifo.getNextSliceInfo(); };
@@ -163,6 +176,11 @@ private:
 	std::atomic<float> m_averagingMs {0.f};
 	// exponential averaging along time (first order IIR per bin on the power spectrum)
 	std::vector<float> m_averagedPower;
+	// host position and sample counters: the beat position of each slice's end
+	HostPosition m_hostPosition;
+	juce::int64 m_samplesFed = 0;       // samples given to processBlock so far
+	juce::int64 m_blockStartSample = 0; // m_samplesFed at the start of the current host block
+	juce::int64 m_sliceEndSample = 0;   // end of the last complete slice
 	bool m_averagingStarted = false; // false: the next block starts the average
 	void switchFFTSize(size_t newFFTSize); // audio thread, realtime safe
 
@@ -192,7 +210,11 @@ public:
     // lin/log switch; the editor places it above the frequency axis (in its title bar)
     juce::Button& getFreqAxisButton() { return m_freqAxisButton; }
     // buttons that the editor shows in its title bar, right of the title image
-    juce::Button& getKeyboardButton() { return m_keyboardButton; }    
+    juce::Button& getKeyboardButton() { return m_keyboardButton; }
+    // all controls of the title bar (the editor is their parent): add, place, show/hide (about box)
+    std::vector<juce::Component*> getTitleBarControls();
+    void setTitleBarBounds(float editorScaleFactor);
+    void setTitleBarVisible(bool visible);    
     //void mouseMove (const MouseEvent& event);    	
 private:
 	JadeSpectrogramAudioProcessor& m_processor;
@@ -258,6 +280,18 @@ private:
     IconButton m_keyboardButton;
     bool m_keyboardOverlay = false;
     void drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<int> display, float textH) const;
+    // BPM grid: metronome button, resolution box and BPM value in the title bar
+    IconButton m_bpmButton;
+    ComboBox m_bpmResolutionCombo;
+    std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_bpmResolutionAttachment;
+    Label m_bpmLabel;
+    bool m_bpmGrid = false;
+    bool m_titleBarVisible = true;
+    struct ColumnBeat { bool has = false; double ppq = 0.0; double barStart = 0.0; float barLen = 4.f; float beatLen = 1.f; float bpm = 0.f; };
+    std::vector<ColumnBeat> m_columnBeat; // beat position of each memory column (like m_displaymem)
+    SliceInfo m_lastSliceInfo;            // of the newest slice: BPM value in the title bar
+    void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const;
+    void updateBpmLabel();
     size_t m_imageRows = 1; // height of m_internalImg
     struct RowMap { size_t bin0; size_t bin1; float frac; bool useMax; };
     enum class AxisMap { Bins, LinearMax, Log };

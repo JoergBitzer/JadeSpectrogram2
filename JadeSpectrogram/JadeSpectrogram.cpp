@@ -57,7 +57,9 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
 void JadeSpectrogramAudio::processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages)
 {
     applyPendingChanges();
+    m_blockStartSample = m_samplesFed;
     SynchronBlockProcessor::processBlock(data, midiMessages);
+    m_samplesFed += data.getNumSamples();
 }
 
 void JadeSpectrogramAudio::applyPendingChanges()
@@ -123,6 +125,7 @@ void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
     m_power.resize(m_freqsize);
     m_averagedPower.resize(m_freqsize);
     m_averagingStarted = false; // new bins: restart the average
+    m_sliceEndSample = m_samplesFed; // prepareSynchronProcessing restarts the block: next slice ends one hop later
     m_publishedFreqSize.store(m_freqsize);
 }
 
@@ -231,8 +234,26 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         m_power[kk] = 10.f*log10f(2.f*m_power[kk]/fs + g_minValForLogSpectrogram);
     }
     // save into mem
+    m_sliceEndSample += static_cast<juce::int64>(numSamples);
     if (!m_PauseMode.load(std::memory_order_relaxed))
-        m_fifo.push(m_power, SliceInfo{numSamples}); // numSamples = hop
+    {
+        SliceInfo info;
+        info.hop = numSamples;
+        if (m_hostPosition.hasPpq && m_hostPosition.bpm > 0.0)
+        {
+            // position at the end of this slice: host position at the block start plus the samples since then
+            const double samplesSinceBlockStart = static_cast<double>(m_sliceEndSample - m_blockStartSample);
+            info.hasPpq = true;
+            info.ppq = m_hostPosition.ppq + samplesSinceBlockStart*m_hostPosition.bpm/(60.0*static_cast<double>(fs));
+            info.bpm = static_cast<float>(m_hostPosition.bpm);
+            const int den = m_hostPosition.denominator > 0 ? m_hostPosition.denominator : 4;
+            const int num = m_hostPosition.numerator > 0 ? m_hostPosition.numerator : 4;
+            info.beatPpq = 4.f/static_cast<float>(den);
+            info.barLengthPpq = static_cast<float>(num)*info.beatPpq;
+            info.barStartPpq = m_hostPosition.hasBarStart ? m_hostPosition.barStartPpq : 0.0;
+        }
+        m_fifo.push(m_power, info);
+    }
 
     return 0;
 }
@@ -305,6 +326,9 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::logFreqAxis, "Log frequency axis", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::keyboardOverlay, "Keyboard overlay", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::bpmGrid, "BPM grid", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::bpmResolution, "BPM grid resolution",
+        StringArray{"1 beat", "1/2 beat", "1/4 beat", "1/8 beat"}, 0, choice));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
     const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
@@ -363,6 +387,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_exchangeSpectrum.resize(m_internalHeight);
 
     m_displaymem.resize(m_internalWidth);
+    m_columnBeat.assign(m_internalWidth, ColumnBeat{});
     for (auto &vec : m_displaymem)
     {
         vec.resize(static_cast<size_t>(m_internalHeight));
@@ -442,6 +467,33 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
             g.fillRect(r.getX() + keyW*static_cast<float>(k) - 0.5f*blackW, r.getY(), blackW, blackH);
         g.fillRect(r.getRight() - 0.5f*blackW, r.getY(), 0.5f*blackW, blackH); // F#, cut at the edge
     };
+    // BPM grid button: a metronome (body, pendulum, weight), highlighted while on
+    m_bpmButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = r.withSizeKeepingCentre(r.getWidth()*1.2f, r.getHeight()*1.3f);
+        const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight();
+        juce::Path body;
+        body.startNewSubPath(x + 0.15f*w, y + h);
+        body.lineTo(x + 0.85f*w, y + h);
+        body.lineTo(x + 0.62f*w, y);
+        body.lineTo(x + 0.38f*w, y);
+        body.closeSubPath();
+        g.setColour(c);
+        g.strokePath(body, juce::PathStrokeType(1.2f));
+        g.drawLine(x + 0.5f*w, y + 0.85f*h, x + 0.82f*w, y + 0.05f*h, 1.4f); // pendulum
+        g.fillRect(x + 0.63f*w, y + 0.38f*h, 0.18f*w, 0.12f*h);                 // weight
+    };
+    m_bpmButton.setTooltip("BPM grid: lines at bars, beats and beat subdivisions (tempo from the host)");
+    m_bpmButton.onClick = [this](){ setBoolParameter(JadeParamID::bpmGrid, !m_bpmGrid); syncFromParameters(); repaint(); };
+    m_bpmResolutionCombo.addItem("1", 1);
+    m_bpmResolutionCombo.addItem("1/2", 2);
+    m_bpmResolutionCombo.addItem("1/4", 3);
+    m_bpmResolutionCombo.addItem("1/8", 4);
+    m_bpmResolutionCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId, JadeTeal);
+    m_bpmResolutionCombo.setTooltip("Grid resolution: every beat, 1/2, 1/4 or 1/8 beat");
+    m_bpmResolutionAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::bpmResolution, m_bpmResolutionCombo);
+    m_bpmLabel.setJustificationType(juce::Justification::centredLeft);
+    m_bpmLabel.setColour(juce::Label::textColourId, JadeGray);
     m_keyboardButton.setTooltip("Keyboard overlay: semitone bands and note names over the spectrogram");
     m_keyboardButton.onClick = [this](){ setBoolParameter(JadeParamID::keyboardOverlay, !m_keyboardOverlay); syncFromParameters(); repaint(); };
     updateDisplayRange();
@@ -558,6 +610,8 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     }
     if (m_keyboardOverlay)
         drawKeyboardOverlay(g, display, m_scaleFactor*static_cast<float>(TextHeight));
+    if (m_bpmGrid)
+        drawBeatGrid(g, display);
     drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), top, displayH,
                       m_scaleFactor*static_cast<float>(TextHeight));
     drawTimeAxis(g, display, m_scaleFactor*static_cast<float>(TextHeight));
@@ -661,6 +715,7 @@ void JadeSpectrogramGUI::timerCallback()
     m_timeRangeBinding->update();
     m_averagingBinding->update();
     updateTimeRange();
+    updateBpmLabel();
     const float minValColor = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
     const float maxValColor = m_apvts.getRawParameterValue(paramDisplayMaxColor.ID)->load();
     if (!juce::approximatelyEqual(minValColor, m_lastColorMin) || !juce::approximatelyEqual(maxValColor, m_lastColorMax))
@@ -693,6 +748,7 @@ void JadeSpectrogramGUI::timerCallback()
 
             m_recomputeAll = true;
             m_displaymem.resize(m_internalWidth);
+            m_columnBeat.assign(m_internalWidth, ColumnBeat{});
             for (auto &vec : m_displaymem)
             {
                 vec.resize(m_internalHeight);
@@ -704,10 +760,14 @@ void JadeSpectrogramGUI::timerCallback()
             m_averagingSlider.updateText(); // "off" limit and scale follow the hop
             m_averagingSlider.repaint();
         }
+        const SliceInfo sliceInfo = m_processor.m_algo.getNextMemSliceInfo();
         stilldataavailable = m_processor.m_algo.getMemSlice(m_exchangeSpectrum);
         if (stilldataavailable)
         {
             m_displaymem[m_displaymem_writepos] = m_exchangeSpectrum;
+            m_columnBeat[m_displaymem_writepos] = {sliceInfo.hasPpq, sliceInfo.ppq, sliceInfo.barStartPpq,
+                                                   sliceInfo.barLengthPpq, sliceInfo.beatPpq, sliceInfo.bpm};
+            m_lastSliceInfo = sliceInfo;
             // write into Bitmap
             if (m_isRunningDisplay)
             {
@@ -914,6 +974,13 @@ void JadeSpectrogramGUI::syncFromParameters()
     const bool fixed = m_apvts.getRawParameterValue(JadeParamID::fixDisplay)->load() > 0.5f;
     if (fixed != m_isRunningDisplay)
         setDisplayMode(fixed);
+    const bool grid = m_apvts.getRawParameterValue(JadeParamID::bpmGrid)->load() > 0.5f;
+    if (grid != m_bpmGrid || grid != m_bpmButton.getToggleState())
+    {
+        m_bpmGrid = grid;
+        m_bpmButton.setToggleState(grid, NotificationType::dontSendNotification);
+        setTitleBarVisible(m_titleBarVisible); // resolution box and BPM value only with the grid
+    }
     const bool keys = m_apvts.getRawParameterValue(JadeParamID::keyboardOverlay)->load() > 0.5f;
     if (keys != m_keyboardOverlay || keys != m_keyboardButton.getToggleState())
     {
@@ -1047,6 +1114,115 @@ float JadeSpectrogramGUI::timeSpan() const
     // one display column per hop (the hop travels with the slices)
     const float fs = m_processor.m_algo.getSamplerate();
     return static_cast<float>(m_internalWidth)*static_cast<float>(m_currentHop)/fs;
+}
+
+std::vector<juce::Component*> JadeSpectrogramGUI::getTitleBarControls()
+{
+    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel};
+}
+
+void JadeSpectrogramGUI::setTitleBarBounds(float s)
+{
+    auto sc = [s](float v) { return static_cast<int>(s*v); };
+    const int y = sc(g_spec_y - 25), h = sc(g_ButtonHeight);
+    // lin/log above the frequency axis labels, the others right of the title image (500 px from g_spec_x + 60)
+    m_freqAxisButton.setBounds(sc(g_spec_x + g_SliderWidth), y, sc(g_FreqMeter), h);
+    float x = static_cast<float>(g_spec_x + 60 + 500 + 5);
+    m_keyboardButton.setBounds(sc(x), y, sc(28), h);       x += 31.f;
+    m_bpmButton.setBounds(sc(x), y, sc(28), h);            x += 31.f;
+    m_bpmResolutionCombo.setBounds(sc(x), y, sc(46), h);   x += 49.f;
+    m_bpmLabel.setBounds(sc(x), y, sc(50), h);             // room for Export (1.14.0) up to the logo
+    m_bpmLabel.setFont(juce::FontOptions(11.f*s));
+}
+
+void JadeSpectrogramGUI::setTitleBarVisible(bool visible)
+{
+    m_titleBarVisible = visible;
+    m_freqAxisButton.setVisible(visible);
+    m_keyboardButton.setVisible(visible);
+    m_bpmButton.setVisible(visible);
+    m_bpmResolutionCombo.setVisible(visible && m_bpmGrid); // only with the grid
+    m_bpmLabel.setVisible(visible && m_bpmGrid);
+}
+
+void JadeSpectrogramGUI::updateBpmLabel()
+{
+    if (!m_bpmGrid)
+        return;
+    String text = "no tempo";
+    if (m_lastSliceInfo.hasPpq && m_lastSliceInfo.bpm > 0.f)
+    {
+        const float bpm = m_lastSliceInfo.bpm;
+        const bool whole = std::abs(bpm - std::round(bpm)) < 0.05f;
+        text = (whole ? String(juce::roundToInt(bpm)) : String(bpm, 1)) + " BPM";
+    }
+    if (m_bpmLabel.getText() != text)
+        m_bpmLabel.setText(text, NotificationType::dontSendNotification);
+}
+
+void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const
+{
+    // Vertical lines where the musical position of the columns crosses a bar, a beat or a subdivision
+    // (1, 1/2, 1/4, 1/8 beat), interpolated between the two columns. No lines where the position
+    // does not advance (transport stopped) or jumps (locate, loop), or without host tempo. Finer
+    // levels are left out where their lines would come closer than 5 px. White with a dark shadow,
+    // so they are visible on bright and on dark parts of the spectrogram.
+    const size_t W = m_internalWidth;
+    if (W < 2 || m_columnBeat.size() != W)
+        return;
+    const int resolution = juce::jlimit(0, 3, juce::roundToInt(m_apvts.getRawParameterValue(JadeParamID::bpmResolution)->load()));
+    const double subdivision = static_cast<double>(1 << resolution); // lines per beat
+    const float dx = static_cast<float>(display.getX()), dw = static_cast<float>(display.getWidth());
+    const float span = m_timeEnd - m_timeStart;
+    auto memColumn = [&](size_t ww) { return m_isRunningDisplay ? ww : (m_displaymem_writepos + ww) % W; };
+    // x of the end of image column ww: the beat position of a column belongs to the end of its slice,
+    // the same convention as the time axis (0 s = end of the newest slice = right edge)
+    auto xOf = [&](size_t ww) { return dx + ((static_cast<float>(ww) + 1.f)/static_cast<float>(W) - m_timeStart)/span*dw; };
+    const float pxPerColumn = dw/(span*static_cast<float>(W));
+    const float fs = m_processor.m_algo.getSamplerate();
+    juce::Graphics::ScopedSaveState state(g);
+    g.reduceClipRegion(display);
+    const size_t w0 = static_cast<size_t>(juce::jmax(1.f, std::floor(m_timeStart*static_cast<float>(W)) - 1.f));
+    const size_t w1 = std::min(W - 1, static_cast<size_t>(std::ceil(m_timeEnd*static_cast<float>(W)) + 1.f));
+    const float top = static_cast<float>(display.getY()), bottom = static_cast<float>(display.getBottom());
+    for (size_t ww = w0; ww <= w1; ++ww)
+    {
+        const ColumnBeat& a = m_columnBeat[memColumn(ww - 1)];
+        const ColumnBeat& b = m_columnBeat[memColumn(ww)];
+        if (!a.has || !b.has || !(b.ppq > a.ppq) || b.bpm <= 0.f)
+            continue;
+        // expected advance per column; much more means a jump
+        const double perColumn = static_cast<double>(b.bpm)/60.0*static_cast<double>(m_currentHop)/static_cast<double>(fs);
+        if (b.ppq - a.ppq > 3.0*perColumn + 1e-9)
+            continue;
+        const float pxPerPpq = pxPerColumn/static_cast<float>(perColumn);
+        const double step = static_cast<double>(b.beatLen)/subdivision;
+        const bool drawSub = subdivision > 1.0 && static_cast<float>(step)*pxPerPpq >= 5.f;
+        const bool drawBeat = b.beatLen*pxPerPpq >= 5.f;
+        const bool drawBar = b.barLen*pxPerPpq >= 5.f;
+        if (!drawBar)
+            continue;
+        const double fineStep = drawSub ? step : (drawBeat ? static_cast<double>(b.beatLen) : static_cast<double>(b.barLen));
+        const float xa = xOf(ww - 1), xb = xOf(ww);
+        for (double k = std::floor((a.ppq - b.barStart)/fineStep) + 1.0; b.barStart + k*fineStep <= b.ppq + 1e-9; k += 1.0)
+        {
+            const double pos = b.barStart + k*fineStep;
+            if (pos <= a.ppq)
+                continue;
+            const double inBar = (pos - b.barStart)/static_cast<double>(b.barLen);
+            const double inBeat = (pos - b.barStart)/static_cast<double>(b.beatLen);
+            const bool isBar = std::abs(inBar - std::round(inBar)) < 1e-6;
+            const bool isBeat = std::abs(inBeat - std::round(inBeat)) < 1e-6;
+            // snapped to the pixel centre: a crisp line of the same intensity everywhere (error < 0.5 px)
+            const float x = std::floor(xa + static_cast<float>((pos - a.ppq)/(b.ppq - a.ppq))*(xb - xa)) + 0.5f;
+            const float alpha = isBar ? 0.9f : (isBeat ? 0.65f : 0.35f);
+            const float width = isBar ? 2.f : 1.f;
+            g.setColour(juce::Colours::black.withAlpha(0.5f*alpha));
+            g.drawLine(x + width, top, x + width, bottom, width);
+            g.setColour(juce::Colours::white.withAlpha(alpha));
+            g.drawLine(x, top, x, bottom, width);
+        }
+    }
 }
 
 void JadeSpectrogramGUI::drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<int> display, float textH) const
