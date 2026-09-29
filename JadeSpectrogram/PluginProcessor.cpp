@@ -31,11 +31,19 @@ JadeSpectrogramAudioProcessor::JadeSpectrogramAudioProcessor()
 	m_presets.loadfromFileAllUserPresets();    
 
     setLatencySamples(m_algo.getLatency());
+    startTimer(100);
 }
 
 JadeSpectrogramAudioProcessor::~JadeSpectrogramAudioProcessor()
 {
+    stopTimer();
+}
 
+void JadeSpectrogramAudioProcessor::timerCallback()
+{
+    const int latency = m_algo.getLatency();
+    if (latency != getLatencySamples())
+        setLatencySamples(latency);
 }
 
 //==============================================================================
@@ -119,6 +127,7 @@ void JadeSpectrogramAudioProcessor::prepareToPlay (double sampleRate, int sample
     juce::ignoreUnused (samplesPerBlock);
     m_fs = static_cast<float>(sampleRate);
     m_algo.prepareToPlay(sampleRate,samplesPerBlock,nrofchannels);
+    setLatencySamples(m_algo.getLatency());
     // m_algo.setSamplerate(sampleRate);
     // m_algo.setmemoryTime_s(10.0);
     // m_algo.setFFTSize(m_fftsize);
