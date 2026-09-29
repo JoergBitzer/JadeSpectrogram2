@@ -47,6 +47,7 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
     m_perLeft.reserve(g_maxFFTSize/2+1);
     m_perRight.reserve(g_maxFFTSize/2+1);
     m_power.reserve(g_maxFFTSize/2+1);
+    m_averagedPower.reserve(g_maxFFTSize/2+1);
 
     m_fftsize = 0; // force the switch, also if the requested size did not change
     applyPendingChanges();
@@ -116,6 +117,8 @@ void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
     m_perLeft.resize(m_freqsize);
     m_perRight.resize(m_freqsize);
     m_power.resize(m_freqsize);
+    m_averagedPower.resize(m_freqsize);
+    m_averagingStarted = false; // new bins: restart the average
     m_publishedFreqSize.store(m_freqsize);
 }
 
@@ -194,6 +197,29 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     else
     {
         m_power = m_perLeft;
+    }
+    // averaging along time: y += alpha*(x - y) per bin, alpha = T/tau with T = one hop;
+    // tau <= T gives alpha = 1, i.e. off (the leftmost slider position)
+    {
+        const float tauMs = (m_averagingParam != nullptr) ? m_averagingParam->load(std::memory_order_relaxed)
+                                                          : m_averagingMs.load(std::memory_order_relaxed);
+        const float hopSeconds = static_cast<float>(numSamples)/fs;
+        const float alpha = (tauMs*0.001f > hopSeconds) ? hopSeconds/(tauMs*0.001f) : 1.f;
+        if (alpha < 1.f && m_averagingStarted)
+        {
+            for (size_t kk = 0; kk < m_freqsize ; ++kk)
+            {
+                m_averagedPower[kk] += alpha*(m_power[kk] - m_averagedPower[kk]);
+                m_power[kk] = m_averagedPower[kk];
+            }
+        }
+        else
+        {
+            // off (or the first block): the average follows the input, so switching on starts
+            // from the current spectrum
+            std::copy(m_power.begin(), m_power.end(), m_averagedPower.begin());
+            m_averagingStarted = true;
+        }
     }
     // convert to dB
     for (size_t kk = 0; kk < m_freqsize ; ++kk)
@@ -274,12 +300,19 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
         static_cast<int>(CColorPalette::PaletteName::kPlasma), choice));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::logFreqAxis, "Log frequency axis", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
+    // averaging time constant: 0 ... 2000 ms, centre of the slider at 200 ms; 0 = off
+    NormalisableRange<float> avgRange(0.f, 2000.f);
+    avgRange.setSkewForCentre(200.f);
+    paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::averaging, "Averaging", avgRange, 0.f,
+        AudioParameterFloatAttributes().withAutomatable(false).withLabel("ms")
+            .withStringFromValueFunction([](float v, int) { return v < 0.5f ? String("off") : String(juce::roundToInt(v)) + " ms"; })));
 }
 
 void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessorValueTreeState> &vts)
 {
     m_fftSizeParam = vts->getRawParameterValue(JadeParamID::fftSize);
     m_windowParam = vts->getRawParameterValue(JadeParamID::window);
+    m_averagingParam = vts->getRawParameterValue(JadeParamID::averaging);
     m_DisplayMinFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMinFreq.ID));
     m_DisplayMaxFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMaxFreq.ID));
     m_DisplayMinColor.prepareParameter(vts->getRawParameterValue(paramDisplayMinColor.ID));
@@ -408,6 +441,22 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_fftSizeCombo.addItem("8192",5);
     m_fftSizeCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
     m_fftSizeAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::fftSize, m_fftSizeCombo);
+
+    m_averagingLabel.setText("Avg", NotificationType::dontSendNotification);
+    m_averagingLabel.setJustificationType(Justification::centredRight);
+    addAndMakeVisible(m_averagingLabel);
+    m_averagingSlider.setTooltip("Averaging along time (time constant); leftmost position: off");
+    m_averagingAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, JadeParamID::averaging, m_averagingSlider);
+    // after the attachment (it sets the range): the text shows "off" below one hop, as the audio thread does
+    m_averagingSlider.textFromValueFunction = [this](double v)
+    {
+        const double hopMs = 1000.0*static_cast<double>(m_internalHeight-1)/static_cast<double>(m_processor.m_algo.getSamplerate());
+        return v <= hopMs ? String("off") : String(juce::roundToInt(v)) + " ms";
+    };
+    m_averagingSlider.valueFromTextFunction = [](const String& t) { return t.trimStart().startsWithIgnoreCase("off") ? 0.0 : t.getDoubleValue(); };
+    m_averagingSlider.setColour(juce::Slider::trackColourId, JadeLightRed1);
+    m_averagingSlider.updateText();
+    addAndMakeVisible(m_averagingSlider);
     addAndMakeVisible(m_fftSizeCombo);
 
     startTimer(40) ;
@@ -536,6 +585,11 @@ void JadeSpectrogramGUI::resized()
     m_windowFktCombo.setBounds(x, rowY, sc(110), rowH);
     x += sc(110 + 8);
     m_fftSizeCombo.setBounds(x, rowY, sc(70), rowH);
+    x += sc(70 + 12);
+    m_averagingLabel.setBounds(x, rowY, sc(30), rowH);
+    x += sc(32);
+    m_averagingSlider.setTextBoxStyle(Slider::TextBoxRight, false, sc(56), rowH);
+    m_averagingSlider.setBounds(x, rowY, sc(210), rowH);
 
     m_colorScheme.setBounds(width - sc(g_colorbar_width + g_FreqMeter + g_SliderWidth), rowY, sc(g_colorbar_width), rowH);
 }
@@ -581,6 +635,7 @@ void JadeSpectrogramGUI::timerCallback()
             m_exchangeSpectrum.resize(m_internalHeight);
             m_displaymem_writepos = 0;
             updateFrequencyMapping(); // new number of bins: new image size (and log mapping)
+            m_averagingSlider.updateText(); // "off" limit = one hop
         }
         stilldataavailable = m_processor.m_algo.getMemSlice(m_exchangeSpectrum);
         if (stilldataavailable)

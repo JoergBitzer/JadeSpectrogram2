@@ -66,6 +66,7 @@ namespace JadeParamID
     inline const juce::String colorMap {"ColorMap"};
     inline const juce::String logFreqAxis {"LogFreqAxis"};
     inline const juce::String fixDisplay {"FixDisplay"};
+    inline const juce::String averaging {"Averaging"}; // time constant in ms, 0 = off
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -111,6 +112,8 @@ public:
     float getSamplerate(){return m_fs.load();};
 	void setWindowType(SpectrumAnalyzer::WindowType type){m_requestedWindow.store(type);};
 	void setChannelMixMode(ChannelMixMode mode){m_mixMode.store(mode);};
+	// averaging time constant in ms (tests without parameters; otherwise the Averaging parameter)
+	void setAveragingMs(float tauMs){m_averagingMs.store(tauMs);};
 	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
 	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
 	bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
@@ -145,6 +148,11 @@ private:
 	// prepareParameter (tests), then setFFTSize / setWindowType are used directly
 	std::atomic<float>* m_fftSizeParam = nullptr;
 	std::atomic<float>* m_windowParam = nullptr;
+	std::atomic<float>* m_averagingParam = nullptr;
+	std::atomic<float> m_averagingMs {0.f};
+	// exponential averaging along time (first order IIR per bin on the power spectrum)
+	std::vector<float> m_averagedPower;
+	bool m_averagingStarted = false; // false: the next block starts the average
 	void switchFFTSize(size_t newFFTSize); // audio thread, realtime safe
 
 	// paramater
@@ -262,6 +270,10 @@ private:
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_colorSchemeAttachment;
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_windowAttachment;
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_fftSizeAttachment;
+    // averaging along time (bottom row): "Avg" label, slider with the value ("off" / ms)
+    Label m_averagingLabel;
+    Slider m_averagingSlider {Slider::LinearHorizontal, Slider::TextBoxRight};
+    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_averagingAttachment;
     bool m_hideFFTSizeCombobox;
     juce::String m_readoutText; // frequency | note | level at the mouse (shown by the crosshair)
 
