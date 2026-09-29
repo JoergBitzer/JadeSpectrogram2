@@ -1,6 +1,14 @@
 # JadeSpectrogram2
 New version of the Jade spectrogram 
 
+## Download
+
+Ready-to-use builds for Windows, macOS (Universal) and Linux (VST3 and Standalone, macOS also AU)
+are on the [Releases page](https://github.com/JoergBitzer/JadeSpectrogram2/releases).
+They are built automatically by GitHub Actions (`.github/workflows/release.yml`) when a version
+tag `vX.Y.Z` is pushed. The macOS binaries are not signed with an Apple Developer ID yet: if macOS
+refuses to open them, run `xattr -cr <path to the plugin or app>` in the Terminal.
+
 ## What is new
 
 ### Code basis and build process

@@ -1,0 +1,130 @@
+# Builds JadeSpectrogram2 for Windows, macOS and Linux.
+#  - push a tag vX.Y.Z (must match the VERSION in JadeSpectrogram/CMakeLists.txt):
+#    builds all platforms and creates a GitHub Release with the zips
+#  - "Run workflow" button on the Actions page: builds only, the zips are
+#    attached to the workflow run (no release)
+name: Build and release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+env:
+  PRODUCT: JadeSpectrogram2
+  ARTEFACTS: build/JadeSpectrogram/JadeSpectrogram_artefacts/Release
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            targets: JadeSpectrogram_VST3 JadeSpectrogram_Standalone
+            cmake_args: ''
+          - name: macOS
+            os: macos-latest
+            targets: JadeSpectrogram_VST3 JadeSpectrogram_AU JadeSpectrogram_Standalone
+            # one Universal binary for Apple Silicon and Intel
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+          - name: Linux
+            # older Ubuntu = older glibc, so the binaries also run on older distributions
+            os: ubuntu-22.04
+            targets: JadeSpectrogram_VST3 JadeSpectrogram_Standalone
+            cmake_args: ''
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libglu1-mesa-dev mesa-common-dev
+
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel 4 --target ${{ matrix.targets }}
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist/$PRODUCT
+          cp -r "$ARTEFACTS/VST3/$PRODUCT.vst3" dist/$PRODUCT/
+          cp "$ARTEFACTS/Standalone/$PRODUCT.exe" dist/$PRODUCT/
+          cd dist && 7z a ../$PRODUCT-Windows.zip $PRODUCT
+
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/$PRODUCT
+          cp -R "$ARTEFACTS/VST3/$PRODUCT.vst3" "$ARTEFACTS/AU/$PRODUCT.component" "$ARTEFACTS/Standalone/$PRODUCT.app" dist/$PRODUCT/
+          # not signed with a Developer ID yet: ad-hoc signature, so the arm64 code is allowed to run at all
+          for bundle in dist/$PRODUCT/*; do codesign --force --deep --sign - "$bundle"; done
+          ditto -c -k --keepParent dist/$PRODUCT $PRODUCT-macOS.zip
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/$PRODUCT
+          cp -r "$ARTEFACTS/VST3/$PRODUCT.vst3" "$ARTEFACTS/Standalone/$PRODUCT" dist/$PRODUCT/
+          cd dist && zip -r ../$PRODUCT-Linux.zip $PRODUCT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PRODUCT }}-${{ matrix.name }}
+          path: ${{ env.PRODUCT }}-${{ matrix.name }}.zip
+
+  release:
+    name: Create release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the tag matches the plugin version
+        run: |
+          version=$(sed -n 's/^project(${TARGET_NAME} VERSION \([0-9.]*\)).*/\1/p' JadeSpectrogram/CMakeLists.txt)
+          echo "tag ${GITHUB_REF_NAME}, CMakeLists version ${version}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: zips
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'EOF'
+          Downloads for Windows, macOS (Universal: Apple Silicon and Intel) and Linux.
+          Each zip contains the VST3 plugin and the Standalone application (macOS also the AU plugin).
+
+          **Installation:** copy the plugin into the standard folder of your system
+          (Windows: `C:\Program Files\Common Files\VST3`, macOS: `~/Library/Audio/Plug-Ins/VST3` and
+          `~/Library/Audio/Plug-Ins/Components`, Linux: `~/.vst3`).
+
+          **macOS:** the binaries are not signed with an Apple Developer ID yet. If macOS says the
+          plugin is damaged or cannot be opened, remove the quarantine flag in the Terminal, e.g.
+          `xattr -cr ~/Library/Audio/Plug-Ins/VST3/JadeSpectrogram2.vst3`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" zips/*.zip --title "$PRODUCT $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes
