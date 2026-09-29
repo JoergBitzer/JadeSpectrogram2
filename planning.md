@@ -75,6 +75,10 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
   FIFO stress test (run with `-fsanitize=thread`), allocation counter around
   `processBlock` while switching FFT size/window, latency measurement with an impulse.
 - Set up CI (GitHub Actions) for Linux/Windows/macOS builds that run these tests.
+- `TGMStaticLib` links `juce::juce_gui_basics` itself, so it compiles its own copy of the
+  JUCE modules, with other options than the plugin (e.g. `JUCE_USE_CURL` on, so the Linux CI
+  needs the curl headers). Better: let the library only use the JUCE headers and have the
+  plugin provide the modules.
 - Reduce warnings (sign conversions, `-Wswitch`, shadowed `p` in `timerCallback`).
 - Remove unused code: `BlockFreeFiFo.h`, `m_fftsize`/`setFFTSize` in the processor,
   `getBlock()`/`getNumAvailableToRead()` if they stay unused, the `WOLA` class if not needed.

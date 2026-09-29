@@ -19,3 +19,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+This license covers the source code in this repository. The plugin binaries
+are built with third-party code under its own licenses -- see "License" in
+README.md. In particular, binaries built with JUCE under the AGPLv3 are, as a
+whole, distributed under the GNU Affero General Public License v3 (full text:
+LICENSE-AGPL-3.0.txt).

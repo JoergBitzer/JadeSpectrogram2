@@ -8,6 +8,8 @@ are on the [Releases page](https://github.com/JoergBitzer/JadeSpectrogram2/relea
 They are built automatically by GitHub Actions (`.github/workflows/release.yml`) when a version
 tag `vX.Y.Z` is pushed. The macOS binaries are not signed with an Apple Developer ID yet: if macOS
 refuses to open them, run `xattr -cr <path to the plugin or app>` in the Terminal.
+Each zip contains the manual ([docs/ManualJadeSpectrogram2.pdf](docs/ManualJadeSpectrogram2.pdf)),
+a ReadMeFirst.txt with the installation steps and the license files.
 
 ## What is new
 
@@ -20,7 +22,26 @@ refuses to open them, run `xattr -cr <path to the plugin or app>` in the Termina
 ### new features
 1. Added the Level for the mouse readout 
 2. The default colormap is now plasma
+3. Zero latency: a pure analyzer, the audio passes through unchanged (1.3)
+4. Changing FFT size or window while the audio runs causes no dropouts (1.3)
 
+## License
 
+- **Source code of this repository: [MIT License](LICENSE)**, (c) Joerg Bitzer, Jade Hochschule.
+- **Plugin binaries:** they contain third-party code:
+  - [JUCE 8](https://github.com/juce-framework/JUCE), used under the
+    [AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html) (JUCE is dual-licensed
+    AGPLv3 / commercial JUCE licence). Therefore the binaries as a whole are
+    distributed under the **AGPLv3** (full text: [LICENSE-AGPL-3.0.txt](LICENSE-AGPL-3.0.txt));
+    the complete source code is this repository plus JUCE.
+  - the VST3 SDK 3.8 by Steinberg (bundled with JUCE; MIT License) -- VST is a
+    registered trademark of Steinberg Media Technologies GmbH;
+  - the Audio Unit SDK by Apple (Apache License 2.0, macOS AU only);
+  - the FFT by Uwe Simmer in [TGMStaticLib](https://github.com/JoergBitzer/TGMStaticLib)
+    (MIT-style license) and the colormap data of matplotlib (viridis, plasma, inferno; CC0).
 
+MIT code may be combined with AGPLv3 code; the MIT license of the files in this repository
+stays as it is, and anyone can reuse them under MIT (for example in a project with a
+commercial JUCE licence). The manual is licensed under CC-BY 4.0.
 
+The plugin comes without any warranty (see the licenses).
