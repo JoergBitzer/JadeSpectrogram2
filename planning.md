@@ -1,7 +1,7 @@
 # JadeSpectrogram2 – planning
 
 Ideas for improving the plugin, collected from a code review (September 2026, v1.2.4;
-updated for v1.2.5).
+updated for v1.3.0).
 Items marked **bug** are verified in the code; the rest are proposals. Within each section
 the most useful items come first.
 
@@ -28,13 +28,11 @@ Done: lock-free SPSC FIFO (v1.2.2), FFT size/window switch without lock or alloc
 
 ## 3. Zero latency instead of reported latency
 
-The plugin is a pure analyzer, but `SynchronBlockProcessor` delays the audio output by the
-hop size (256 … 4096 samples). v1.2.4 reports this to the host, but many hosts only apply a
-latency change when the transport stops, and a changing latency is annoying in a mix.
-
-- Better: pass the audio through unchanged and only *copy* it into the analysis buffer.
-  The output is then bit-identical to the input, the latency is 0 and never changes, and
-  most of the `SynchronBlockProcessor` output bookkeeping disappears.
+Done in v1.3.0: `SynchronBlockProcessor` (tools, version 2.2) has a
+`ProcessingMode::Analyze`. The audio passes unchanged and without delay, and the synchron
+blocks are only analysed. The spectrogram uses it, so its latency is 0 for every FFT size.
+Other analyzers can use the same mode with `setProcessingMode(ProcessingMode::Analyze)`.
+The latency timer from v1.2.4 stays in the processor for the Process mode case.
 
 ## 4. Analysis features
 
@@ -87,7 +85,6 @@ latency change when the transport stops, and a changing latency is annoying in a
 
 ## Suggested order
 
-1. Zero-latency pass-through (section 3): removes a whole class of host problems.
-2. Remaining real-time items (section 2) and the tests/CI (section 6).
-3. Log frequency axis, overlap selection, saving the GUI settings.
-4. Larger features: stereo views, multi-resolution, export.
+1. Remaining real-time items (section 2) and the tests/CI (section 6).
+2. Log frequency axis, overlap selection, saving the GUI settings.
+3. Larger features: stereo views, multi-resolution, export.

@@ -82,7 +82,7 @@ public:
     void prepareParameter(std::unique_ptr<juce::AudioProcessorValueTreeState>&  vts);
     
     // some necessary info for the host
-    int getLatency(){return m_Latency.load();}; // delay of the audio pass-through in samples (= hop size)
+    int getLatency(){return m_Latency.load();}; // delay of the audio pass-through in samples (0 in Analyze mode)
 
 	// setFFTSize and setWindowType can be called from any thread (GUI): they only post a request,
 	// the audio thread applies it at the start of its next processBlock
@@ -103,7 +103,7 @@ public:
 
 private:
 	JadeSpectrogramAudioProcessor* m_processor;
-    std::atomic<int> m_Latency {2048/2}; // written by the audio thread on an FFT size switch
+    std::atomic<int> m_Latency {0}; // written by the audio thread on an FFT size switch
     float m_fs;
     size_t m_channels;
 

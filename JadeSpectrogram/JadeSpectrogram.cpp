@@ -12,6 +12,8 @@ m_fifo(1000, g_maxFFTSize/2+1) // 1000 time slices should be enough
     m_mixMode = JadeSpectrogramAudio::ChannelMixMode::AbsMean;
     m_windowChoice = SpectrumAnalyzer::WindowType::Hann;
     m_PauseMode = false;
+    // pure analyzer: the audio passes unchanged and without latency
+    setProcessingMode(SynchronBlockProcessor::ProcessingMode::Analyze);
     m_fifo.setActSize(999, g_maxFFTSize/2+1); // we push one time slice after the other
     m_fifo.reset();
     m_fifo.fill(10.f*log10f(g_minValForLogSpectrogram)); // fill with very low values
@@ -94,7 +96,7 @@ void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
     // synchronblocksize should be the same as the hop size of the analyzers
     const size_t synchronblocksize = left.getHopSize();
     prepareSynchronProcessing(static_cast<int>(m_channels),static_cast<int>(synchronblocksize));
-    m_Latency = static_cast<int>(synchronblocksize);
+    m_Latency.store(getDelay()); // 0 in Analyze mode
 
     // all within the capacity reserved in prepareToPlay, so no allocation
     m_timeInLeft.resize(synchronblocksize);

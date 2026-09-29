@@ -4,8 +4,8 @@
  * @brief class to rebuffer an JUCE AudioBuffer and MidiMessageQueue of arbitrary length to AudioBuffer of a given length
  * Useful for fft processing or faster parameter updates and modulation
  * Usage: Inherit from this class and override ProcessSynchronBlock
- * @version 2.0
- * @date 2022-02-27
+ * @version 2.2
+ * @date 2026-09-29
  * 
  * @copyright Copyright (c) 2022
  * 
@@ -19,6 +19,9 @@
 //
 // Version 2.0 (only JUCE AUdioBUffer, without std::vector)
 // Version 2.1 (added directthrue option and changed CriticalSection to ScopedLock (RAII))
+// Version 2.2 (added ProcessingMode::Analyze: the audio passes unchanged and without delay,
+//              the synchron blocks are only analysed; prepareSynchronProcessing does not
+//              reallocate for smaller sizes; directthrue no longer runs the buffering too)
 
 /* ToDO:
 1) rewrite as template class for double
@@ -30,6 +33,12 @@
 class SynchronBlockProcessor
 {
 public:
+    enum class ProcessingMode
+    {
+        Process, // default: the output is the processed synchron blocks, delayed by desiredSize (getDelay)
+        Analyze  // for analyzers: the output is the unchanged input without delay, processSynchronBlock
+                 // gets a copy of the input (changes to it are ignored), getDelay() is 0
+    };
     SynchronBlockProcessor();
     ~SynchronBlockProcessor(){};
     /**
@@ -62,7 +71,14 @@ public:
      * @return int this will be DesiredSize
      */
     int getDelay();
+    /**
+     * @brief set Process (default) or Analyze mode, see ProcessingMode.
+     * Call it before or together with prepareSynchronProcessing (not while processBlock runs)
+     */
+    void setProcessingMode(ProcessingMode mode){m_mode = mode;};
+    ProcessingMode getProcessingMode() const {return m_mode;};
 private:
+    ProcessingMode m_mode = ProcessingMode::Process;
     CriticalSection m_protectBlock;
     int m_NrOfChannels;
     int m_OutBlockSize;

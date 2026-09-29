@@ -39,7 +39,9 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
     if (m_directthrue == true)
     {
         processSynchronBlock(data, midiMessages, nrofBlockProcessed);
+        return; // no buffering (m_block has no samples)
     }
+    const bool analyzeOnly = (m_mode == ProcessingMode::Analyze);
     // m_protectBlock.enter();
     auto readdatapointers = data.getArrayOfReadPointers();
     auto writedatapointers = data.getArrayOfWritePointers();
@@ -55,7 +57,8 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
         for (auto cc = 0; cc < nrOfChannels; ++cc)
         {
             blockwritedatapointers[cc][m_InCounter] = readdatapointers[cc][kk];
-            writedatapointers[cc][kk] = memreaddatapointers[cc][m_OutCounter];
+            if (!analyzeOnly) // in Analyze mode the input stays in data (no delay)
+                writedatapointers[cc][kk] = memreaddatapointers[cc][m_OutCounter];
         }
         m_InCounter++;
         if (m_InCounter == m_OutBlockSize)
@@ -74,7 +77,11 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
             m_pastSamples = 0;
 
                 // copy block into mem
-            if (m_OutCounter < m_OutBlockSize)
+            if (analyzeOnly)
+            {
+                // the processed block is not used for the output
+            }
+            else if (m_OutCounter < m_OutBlockSize)
             {
                 for (auto channel = 0; channel < nrOfChannels; ++channel)
                 {
@@ -118,7 +125,7 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
 
 int SynchronBlockProcessor::getDelay()
 {
-    if (m_directthrue)
+    if (m_directthrue || m_mode == ProcessingMode::Analyze)
         return 0;
     else
         return m_OutBlockSize;
