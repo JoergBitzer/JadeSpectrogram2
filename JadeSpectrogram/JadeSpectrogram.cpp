@@ -495,6 +495,25 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_bpmResolutionAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::bpmResolution, m_bpmResolutionCombo);
     m_bpmLabel.setJustificationType(juce::Justification::centredLeft);
     m_bpmLabel.setColour(juce::Label::textColourId, JadeGray);
+    // export button: an arrow down into a tray
+    m_exportButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = r.withSizeKeepingCentre(r.getWidth()*1.2f, r.getHeight()*1.25f);
+        const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight();
+        g.setColour(c);
+        juce::Path tray;
+        tray.startNewSubPath(x, y + 0.55f*h);
+        tray.lineTo(x, y + h);
+        tray.lineTo(x + w, y + h);
+        tray.lineTo(x + w, y + 0.55f*h);
+        g.strokePath(tray, juce::PathStrokeType(1.4f));
+        g.drawLine(x + 0.5f*w, y, x + 0.5f*w, y + 0.62f*h, 1.6f);
+        juce::Path head;
+        head.addTriangle(x + 0.25f*w, y + 0.45f*h, x + 0.75f*w, y + 0.45f*h, x + 0.5f*w, y + 0.78f*h);
+        g.fillPath(head);
+    };
+    m_exportButton.setTooltip("Export: save the visible spectrogram with its axes as a PNG file");
+    m_exportButton.onClick = [this](){ exportClicked(); };
     m_keyboardButton.setTooltip("Keyboard overlay: semitone bands and note names over the spectrogram");
     m_keyboardButton.onClick = [this](){ setBoolParameter(JadeParamID::keyboardOverlay, !m_keyboardOverlay); syncFromParameters(); repaint(); };
     updateDisplayRange();
@@ -1119,7 +1138,7 @@ float JadeSpectrogramGUI::timeSpan() const
 
 std::vector<juce::Component*> JadeSpectrogramGUI::getTitleBarControls()
 {
-    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel};
+    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel, &m_exportButton};
 }
 
 void JadeSpectrogramGUI::setTitleBarBounds(float s)
@@ -1132,7 +1151,8 @@ void JadeSpectrogramGUI::setTitleBarBounds(float s)
     m_keyboardButton.setBounds(sc(x), y, sc(28), h);       x += 31.f;
     m_bpmButton.setBounds(sc(x), y, sc(28), h);            x += 31.f;
     m_bpmResolutionCombo.setBounds(sc(x), y, sc(46), h);   x += 49.f;
-    m_bpmLabel.setBounds(sc(x), y, sc(50), h);             // room for Export (1.14.0) up to the logo
+    m_bpmLabel.setBounds(sc(x), y, sc(50), h);             x += 53.f;
+    m_exportButton.setBounds(sc(x), y, sc(28), h);         // up to the logo (g_spec_x + g_spec_width - 68)
     m_bpmLabel.setFont(juce::FontOptions(11.f*s));
 }
 
@@ -1144,6 +1164,53 @@ void JadeSpectrogramGUI::setTitleBarVisible(bool visible)
     m_bpmButton.setVisible(visible);
     m_bpmResolutionCombo.setVisible(visible && m_bpmGrid); // only with the grid
     m_bpmLabel.setVisible(visible && m_bpmGrid);
+    m_exportButton.setVisible(visible);
+}
+
+juce::Image JadeSpectrogramGUI::renderExportImage(float resolutionScale)
+{
+    // from the frequency labels to the colour bar labels, from the top of the display to the
+    // bottom of the time axis: between the range sliders and above the bottom row
+    const auto display = displayArea();
+    const float s = m_scaleFactor;
+    const int x0 = static_cast<int>(s*static_cast<float>(g_SliderMinFreq_x + g_SliderWidth));
+    const int x1 = getWidth() - static_cast<int>(s*static_cast<float>(g_SliderWidth + g_SliderMinFreq_x));
+    const int y0 = display.getY();
+    const int y1 = display.getBottom() + static_cast<int>(s*static_cast<float>(g_timeAxisHeight));
+    const juce::ScopedValueSetter<bool> noCrosshair(m_mouseInDisplay, false);
+    return createComponentSnapshot({x0, y0, x1 - x0, y1 - y0}, true, resolutionScale);
+}
+
+bool JadeSpectrogramGUI::exportPNG(const juce::File& file, float resolutionScale)
+{
+    const juce::Image image = renderExportImage(resolutionScale);
+    if (!image.isValid())
+        return false;
+    file.deleteFile();
+    juce::FileOutputStream stream(file);
+    if (!stream.openedOk())
+        return false;
+    return juce::PNGImageFormat().writeImageToStream(image, stream);
+}
+
+void JadeSpectrogramGUI::exportClicked()
+{
+    const auto name = "JadeSpectrogram2_" + juce::Time::getCurrentTime().formatted("%Y-%m-%d_%H-%M-%S") + ".png";
+    const auto folder = juce::File::getSpecialLocation(juce::File::userPicturesDirectory);
+    m_exportChooser = std::make_unique<juce::FileChooser>("Save the spectrogram as PNG", folder.getChildFile(name), "*.png");
+    m_exportChooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                 | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this](const juce::FileChooser& chooser)
+        {
+            auto file = chooser.getResult();
+            if (file == juce::File())
+                return; // cancelled
+            if (!file.hasFileExtension("png"))
+                file = file.withFileExtension("png");
+            if (!exportPNG(file))
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Export",
+                                                       "The file could not be written:\n" + file.getFullPathName());
+        });
 }
 
 void JadeSpectrogramGUI::updateBpmLabel()

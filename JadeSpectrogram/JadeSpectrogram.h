@@ -214,7 +214,10 @@ public:
     // all controls of the title bar (the editor is their parent): add, place, show/hide (about box)
     std::vector<juce::Component*> getTitleBarControls();
     void setTitleBarBounds(float editorScaleFactor);
-    void setTitleBarVisible(bool visible);    
+    void setTitleBarVisible(bool visible);
+    // export: the visible spectrogram with its axes and the colour bar (no sliders, buttons, crosshair)
+    juce::Image renderExportImage(float resolutionScale = 2.f);
+    bool exportPNG(const juce::File& file, float resolutionScale = 2.f);    
     //void mouseMove (const MouseEvent& event);    	
 private:
 	JadeSpectrogramAudioProcessor& m_processor;
@@ -292,6 +295,9 @@ private:
     SliceInfo m_lastSliceInfo;            // of the newest slice: BPM value in the title bar
     void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const;
     void updateBpmLabel();
+    IconButton m_exportButton;
+    std::unique_ptr<juce::FileChooser> m_exportChooser; // alive while the (asynchronous) dialog is open
+    void exportClicked();
     size_t m_imageRows = 1; // height of m_internalImg
     struct RowMap { size_t bin0; size_t bin1; float frac; bool useMax; };
     enum class AxisMap { Bins, LinearMax, Log };

@@ -181,7 +181,8 @@ final layout below is the target.
    The host's beat position (ppq) travels through the FIFO with each slice (like the slice
    size), so the lines sit on the beats also after tempo changes and transport jumps;
    BPM and position follow the host when the transport starts, stops or jumps.
-9. **1.14.0 Export PNG** (item 12, decision 6): the visible spectrogram with correct axes.
+9. ~~**1.14.0 Export PNG**~~ -- done: the visible spectrogram with frequency and time axis and the
+   colour bar, twice the screen resolution, no crosshair; file dialog. (item 12, decision 6): the visible spectrogram with correct axes.
 10. **2.0.0 Release**: manual (new screenshot, all new controls, release notes), marketing
     texts, pluginval (strictness 10, 5 runs), the test programs, CI build, tag v2.0.0.
 
