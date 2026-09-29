@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include "ColormapData.h"
 
@@ -76,9 +77,9 @@ public:
 	int index = static_cast<int> ((value-m_Min) * m_AccessMult);
 
 	if (index < m_NrOfColors)
-		return m_Color[static_cast<size_t>(index)];
+		return m_Color[static_cast<std::size_t>(index)];
 	else
-		return m_Color[static_cast<size_t>(m_NrOfColors-1)];
+		return m_Color[static_cast<std::size_t>(m_NrOfColors-1)];
 
 	}; 
 	
@@ -97,7 +98,7 @@ protected:
 	void AllocateColors(void);
 
 	/// @brief Store a color (index 0 ... m_NrOfColors-1, color 0xRRGGBB)
-	void setColor(int index, int color) { m_Color[static_cast<size_t>(index)] = static_cast<unsigned int>(color); }
+	void setColor(int index, int color) { m_Color[static_cast<std::size_t>(index)] = static_cast<unsigned int>(color); }
 	
 	std::vector<unsigned int> m_Color;       ///< Array of RGB colors (0xRRGGBB format)
 	int m_NrOfColors;               ///< Number of discrete colors in palette

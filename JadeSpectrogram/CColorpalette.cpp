@@ -103,7 +103,7 @@ float CColorPalette::getValue(unsigned int iColor)
 	float value;
 	for (kk = 0 ;kk < m_NrOfColors ;kk++)
 	{
-		if (m_Color[static_cast<size_t>(kk)] == iColor)
+		if (m_Color[static_cast<std::size_t>(kk)] == iColor)
 		{
 			value = static_cast<float>(kk)/m_AccessMult + m_Min;
 			return value;
@@ -116,7 +116,7 @@ float CColorPalette::getValue(unsigned int iColor)
 /// Resizes the color vector to hold m_NrOfColors entries
 void CColorPalette::AllocateColors(void)
 {
-	m_Color.resize(static_cast<size_t>(m_NrOfColors));
+	m_Color.resize(static_cast<std::size_t>(m_NrOfColors));
 	ComputeColors();
 
 }
