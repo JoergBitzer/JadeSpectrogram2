@@ -16,7 +16,7 @@ TwoDimBlockFreeFiFO::TwoDimBlockFreeFiFO(size_t max_x, size_t max_y)
     buildMem();
 }
 
-bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock)
+bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock, const SliceInfo& info)
 {
     assert(inBlock.size() <= m_actSize_y);
     const size_t write = m_writecounter.load(std::memory_order_relaxed); // only this thread writes it
@@ -30,6 +30,7 @@ bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock)
 
     memcpy(m_Mem[write].data(), inBlock.data(), inBlock.size()*sizeof(float));
     m_sliceSize[write] = inBlock.size();
+    m_sliceInfo[write] = info;
     m_writecounter.store(next, std::memory_order_release); // publish the slice
     return true;
 }
@@ -52,6 +53,14 @@ size_t TwoDimBlockFreeFiFO::getNextSliceSize() const
     if (read == m_writecounter.load(std::memory_order_acquire))
         return 0;
     return m_sliceSize[read];
+}
+
+SliceInfo TwoDimBlockFreeFiFO::getNextSliceInfo() const
+{
+    const size_t read = m_readcounter.load(std::memory_order_relaxed);
+    if (read == m_writecounter.load(std::memory_order_acquire))
+        return {};
+    return m_sliceInfo[read];
 }
 
 size_t TwoDimBlockFreeFiFO::getNumAvailableToRead() const
@@ -80,6 +89,7 @@ bool TwoDimBlockFreeFiFO::setActSize(size_t act_x, size_t act_y)
     m_readcounter.store(0);
     m_Mem.resize(m_actSize_x);
     m_sliceSize.assign(m_actSize_x, act_y);
+    m_sliceInfo.assign(m_actSize_x, SliceInfo{});
     m_actSize_y = act_y;
     for (size_t kk = 0; kk < m_actSize_x ; kk++)
     {

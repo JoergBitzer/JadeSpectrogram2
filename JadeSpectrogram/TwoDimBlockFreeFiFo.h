@@ -12,6 +12,12 @@
 // the slice data (and its size) visible before the counter that publishes it.
 // The setters, reset() and fill() are NOT thread-safe: call them only while neither
 // push() nor pop() can run (e.g. prepareToPlay or while the audio thread is locked out).
+// information that travels with each slice (written by the producer with the slice)
+struct SliceInfo
+{
+    size_t hop = 0; // samples between this slice and the previous one
+};
+
 class TwoDimBlockFreeFiFO
 {
 public:
@@ -19,9 +25,10 @@ public:
     TwoDimBlockFreeFiFO(size_t max_x, size_t max_y);
 
     // processing
-    bool push(const std::vector <float> & inBlock); // one xSlice in each call, false if full (slice dropped)
+    bool push(const std::vector <float> & inBlock, const SliceInfo& info = {}); // one xSlice in each call, false if full (slice dropped)
     bool pop(      std::vector <float> & outBlock); // one xSlice in each call, false if empty; outBlock.size() must be getNextSliceSize()
     size_t getNextSliceSize() const; // consumer only: size of the slice pop() returns next, 0 if empty
+    SliceInfo getNextSliceInfo() const; // consumer only: info of the slice pop() returns next (default if empty)
     size_t getNumAvailableToRead() const;
     bool getBlock(std::vector <std::vector <float> > & outBlock);
 
@@ -35,6 +42,7 @@ public:
 private:
     std::vector<std::vector <float> > m_Mem;
     std::vector<size_t> m_sliceSize; // number of valid elements in each slot
+    std::vector<SliceInfo> m_sliceInfo;
     size_t m_maxCapacity_x = 0;
     size_t m_maxCapacity_y = 0;
     size_t m_actSize_x = 0;

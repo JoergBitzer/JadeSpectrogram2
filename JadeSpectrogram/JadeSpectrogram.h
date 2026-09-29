@@ -67,12 +67,14 @@ namespace JadeParamID
     inline const juce::String logFreqAxis {"LogFreqAxis"};
     inline const juce::String fixDisplay {"FixDisplay"};
     inline const juce::String averaging {"Averaging"}; // time constant in ms, 0 = off
+    inline const juce::String overlap {"Overlap"}; // 0: 50 %, 1: 75 %
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
 constexpr size_t g_minFFTSizeLog2 = 9;
 constexpr size_t g_nrOfFFTSizes = 5;
 constexpr size_t g_maxFFTSize = size_t(1) << (g_minFFTSizeLog2 + g_nrOfFFTSizes - 1);
+constexpr size_t g_nrOfOverlaps = 2; // 0: 50 % (hop = FFT size / 2), 1: 75 % (hop = FFT size / 4)
 
 class JadeSpectrogramAudio : public SynchronBlockProcessor
 {
@@ -114,8 +116,10 @@ public:
 	void setChannelMixMode(ChannelMixMode mode){m_mixMode.store(mode);};
 	// averaging time constant in ms (tests without parameters; otherwise the Averaging parameter)
 	void setAveragingMs(float tauMs){m_averagingMs.store(tauMs);};
+	void setOverlap(size_t overlapIndex){m_requestedOverlap.store(std::min(overlapIndex, g_nrOfOverlaps-1));}; // tests
 	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
 	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
+	SliceInfo getNextMemSliceInfo() const { return m_fifo.getNextSliceInfo(); };
 	bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
 
 private:
@@ -131,9 +135,12 @@ private:
 	std::atomic<SpectrumAnalyzer::WindowType> m_requestedWindow {SpectrumAnalyzer::WindowType::Hann};
 
 	// one prepared analyzer pair per FFT size, so switching the size never allocates
-	std::array<SpectrumAnalyzer, g_nrOfFFTSizes> m_leftAnalyzers;
-	std::array<SpectrumAnalyzer, g_nrOfFFTSizes> m_rightAnalyzers;
+	// [overlap][FFT size]
+	std::array<std::array<SpectrumAnalyzer, g_nrOfFFTSizes>, g_nrOfOverlaps> m_leftAnalyzers;
+	std::array<std::array<SpectrumAnalyzer, g_nrOfFFTSizes>, g_nrOfOverlaps> m_rightAnalyzers;
 	size_t m_activeAnalyzer = 0;
+	size_t m_activeOverlap = 0;
+	std::atomic<size_t> m_requestedOverlap {0};
 	TwoDimBlockFreeFiFO m_fifo;
 	std::vector<float> m_power;
 	std::vector<float> m_perLeft;
@@ -149,6 +156,7 @@ private:
 	std::atomic<float>* m_fftSizeParam = nullptr;
 	std::atomic<float>* m_windowParam = nullptr;
 	std::atomic<float>* m_averagingParam = nullptr;
+	std::atomic<float>* m_overlapParam = nullptr;
 	std::atomic<float> m_averagingMs {0.f};
 	// exponential averaging along time (first order IIR per bin on the power spectrum)
 	std::vector<float> m_averagedPower;
@@ -266,10 +274,13 @@ private:
     
     //JadeSpectrogramAudioProcessorEditor& m_editor;
     ComboBox m_fftSizeCombo;
+    ComboBox m_overlapCombo;
+    size_t m_currentHop = 1; // hop of the slices in the display memory (from SliceInfo)
     // after the combo boxes: destroyed before them
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_colorSchemeAttachment;
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_windowAttachment;
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_fftSizeAttachment;
+    std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_overlapAttachment;
     // averaging along time (bottom row): "Avg" label, slider with the value ("off" / ms)
     Label m_averagingLabel;
     Slider m_averagingSlider {Slider::LinearHorizontal, Slider::TextBoxRight};

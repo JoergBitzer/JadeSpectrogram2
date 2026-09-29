@@ -27,20 +27,21 @@ void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBl
     m_fs = static_cast<float>(sampleRate);
 
     // allocate everything for all FFT sizes here, so switchFFTSize() never allocates
+    for (size_t ov = 0; ov < g_nrOfOverlaps; ++ov)
     for (size_t idx = 0; idx < g_nrOfFFTSizes; ++idx)
     {
         size_t fftsize = size_t(1) << (g_minFFTSizeLog2 + idx);
-        for (auto* analyzer : {&m_leftAnalyzers[idx], &m_rightAnalyzers[idx]})
+        for (auto* analyzer : {&m_leftAnalyzers[ov][idx], &m_rightAnalyzers[ov][idx]})
         {
             analyzer->setSampleRate(sampleRate);
-            analyzer->setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
+            analyzer->setOverlap(ov == 0 ? SpectrumAnalyzer::OverlapPercentage::perc50 : SpectrumAnalyzer::OverlapPercentage::perc75);
             analyzer->setBlockSize(fftsize);
             analyzer->setFFTSize(fftsize);
             analyzer->setWindowType(m_windowChoice);
             analyzer->reset();
         }
     }
-    const size_t maxHopSize = m_leftAnalyzers[g_nrOfFFTSizes-1].getHopSize();
+    const size_t maxHopSize = m_leftAnalyzers[0][g_nrOfFFTSizes-1].getHopSize(); // 50 %, largest FFT
     prepareSynchronProcessing(static_cast<int>(m_channels),static_cast<int>(maxHopSize));
     m_timeInLeft.reserve(maxHopSize);
     m_timeInRight.reserve(maxHopSize);
@@ -72,8 +73,10 @@ void JadeSpectrogramAudio::applyPendingChanges()
                                      juce::roundToInt(m_windowParam->load(std::memory_order_relaxed)));
         m_requestedWindow.store(static_cast<SpectrumAnalyzer::WindowType>(idx));
     }
+    if (m_overlapParam != nullptr)
+        m_requestedOverlap.store(juce::roundToInt(m_overlapParam->load(std::memory_order_relaxed)) > 0 ? 1u : 0u);
     const size_t requestedFFTSize = m_requestedFFTSize.load();
-    if (requestedFFTSize != m_fftsize)
+    if (requestedFFTSize != m_fftsize || m_requestedOverlap.load() != m_activeOverlap)
         switchFFTSize(requestedFFTSize);
 
     const auto requestedWindow = m_requestedWindow.load();
@@ -81,8 +84,8 @@ void JadeSpectrogramAudio::applyPendingChanges()
     {
         m_windowChoice = requestedWindow;
         // same size as before, so the window is recomputed in place
-        m_leftAnalyzers[m_activeAnalyzer].setWindowType(m_windowChoice);
-        m_rightAnalyzers[m_activeAnalyzer].setWindowType(m_windowChoice);
+        m_leftAnalyzers[m_activeOverlap][m_activeAnalyzer].setWindowType(m_windowChoice);
+        m_rightAnalyzers[m_activeOverlap][m_activeAnalyzer].setWindowType(m_windowChoice);
     }
 }
 
@@ -93,10 +96,11 @@ void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
     while (idx + 1 < g_nrOfFFTSizes && (size_t(1) << (g_minFFTSizeLog2 + idx)) < newFFTSize)
         ++idx;
     m_activeAnalyzer = idx;
+    m_activeOverlap = m_requestedOverlap.load();
     m_fftsize = newFFTSize;
 
-    auto& left = m_leftAnalyzers[m_activeAnalyzer];
-    auto& right = m_rightAnalyzers[m_activeAnalyzer];
+    auto& left = m_leftAnalyzers[m_activeOverlap][m_activeAnalyzer];
+    auto& right = m_rightAnalyzers[m_activeOverlap][m_activeAnalyzer];
     left.reset();
     right.reset();
     if (left.getWindowType() != m_windowChoice)
@@ -159,10 +163,10 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         }
     }
     // Compute Periodograms for each channel
-    m_leftAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInLeft, m_perLeft);
+    m_leftAnalyzers[m_activeOverlap][m_activeAnalyzer].getPeriodogram(m_timeInLeft, m_perLeft);
     if (numChannels>1)
     {
-        m_rightAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInRight, m_perRight);
+        m_rightAnalyzers[m_activeOverlap][m_activeAnalyzer].getPeriodogram(m_timeInRight, m_perRight);
         switch (mixMode)
         {
             case JadeSpectrogramAudio::ChannelMixMode::TimeMean: // mean is already in both time signals
@@ -228,7 +232,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     }
     // save into mem
     if (!m_PauseMode.load(std::memory_order_relaxed))
-        m_fifo.push(m_power);
+        m_fifo.push(m_power, SliceInfo{numSamples}); // numSamples = hop
 
     return 0;
 }
@@ -300,6 +304,8 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
         static_cast<int>(CColorPalette::PaletteName::kPlasma), choice));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::logFreqAxis, "Log frequency axis", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
+        StringArray{"50 %", "75 %"}, 0, choice));
     // averaging time constant: 0 ... 2000 ms, centre of the slider at 200 ms; 0 = off
     NormalisableRange<float> avgRange(0.f, 2000.f);
     avgRange.setSkewForCentre(200.f);
@@ -313,6 +319,7 @@ void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessor
     m_fftSizeParam = vts->getRawParameterValue(JadeParamID::fftSize);
     m_windowParam = vts->getRawParameterValue(JadeParamID::window);
     m_averagingParam = vts->getRawParameterValue(JadeParamID::averaging);
+    m_overlapParam = vts->getRawParameterValue(JadeParamID::overlap);
     m_DisplayMinFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMinFreq.ID));
     m_DisplayMaxFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMaxFreq.ID));
     m_DisplayMinColor.prepareParameter(vts->getRawParameterValue(paramDisplayMinColor.ID));
@@ -343,7 +350,8 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 {
     m_internalHeight = m_processor.m_algo.getSpectrumSize();
     float fs = m_processor.m_algo.getSamplerate();
-    m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/static_cast<float>(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
+    m_currentHop = m_internalHeight-1; // 50 % overlap until the first slice tells the hop
+    m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/static_cast<float>(m_currentHop));
 
     m_exchangeSpectrum.resize(m_internalHeight);
 
@@ -442,6 +450,13 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_fftSizeCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
     m_fftSizeAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::fftSize, m_fftSizeCombo);
 
+    m_overlapCombo.addItem("50 %", 1);
+    m_overlapCombo.addItem("75 %", 2);
+    m_overlapCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
+    m_overlapCombo.setTooltip("Overlap of the analysis blocks (75 %: twice as many columns, smoother time axis)");
+    m_overlapAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::overlap, m_overlapCombo);
+    addAndMakeVisible(m_overlapCombo);
+
     m_averagingLabel.setText("Avg", NotificationType::dontSendNotification);
     m_averagingLabel.setJustificationType(Justification::centredRight);
     addAndMakeVisible(m_averagingLabel);
@@ -450,7 +465,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     // after the attachment (it sets the range): the text shows "off" below one hop, as the audio thread does
     m_averagingSlider.textFromValueFunction = [this](double v)
     {
-        const double hopMs = 1000.0*static_cast<double>(m_internalHeight-1)/static_cast<double>(m_processor.m_algo.getSamplerate());
+        const double hopMs = 1000.0*static_cast<double>(m_currentHop)/static_cast<double>(m_processor.m_algo.getSamplerate());
         return v <= hopMs ? String("off") : String(juce::roundToInt(v)) + " ms";
     };
     m_averagingSlider.valueFromTextFunction = [](const String& t) { return t.trimStart().startsWithIgnoreCase("off") ? 0.0 : t.getDoubleValue(); };
@@ -584,12 +599,14 @@ void JadeSpectrogramGUI::resized()
     x += sc(40 + 12);
     m_windowFktCombo.setBounds(x, rowY, sc(110), rowH);
     x += sc(110 + 8);
+    m_overlapCombo.setBounds(x, rowY, sc(62), rowH);
+    x += sc(62 + 8);
     m_fftSizeCombo.setBounds(x, rowY, sc(70), rowH);
     x += sc(70 + 12);
     m_averagingLabel.setBounds(x, rowY, sc(30), rowH);
     x += sc(32);
     m_averagingSlider.setTextBoxStyle(Slider::TextBoxRight, false, sc(56), rowH);
-    m_averagingSlider.setBounds(x, rowY, sc(210), rowH);
+    m_averagingSlider.setBounds(x, rowY, sc(170), rowH);
 
     m_colorScheme.setBounds(width - sc(g_colorbar_width + g_FreqMeter + g_SliderWidth), rowY, sc(g_colorbar_width), rowH);
 }
@@ -619,11 +636,15 @@ void JadeSpectrogramGUI::timerCallback()
         size_t actSpectrumSize = m_processor.m_algo.getNextMemSliceSize();
         if (actSpectrumSize == 0) // nothing new
             break;
-        if (actSpectrumSize != m_internalHeight)
+        size_t hop = m_processor.m_algo.getNextMemSliceInfo().hop;
+        if (hop == 0)
+            hop = actSpectrumSize-1;
+        if (actSpectrumSize != m_internalHeight || hop != m_currentHop) // new FFT size or overlap
         {
             m_internalHeight = actSpectrumSize;
+            m_currentHop = hop;
             float fs = m_processor.m_algo.getSamplerate();
-            m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
+            m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/static_cast<float>(m_currentHop)); // one column per hop
 
             m_recomputeAll = true;
             m_displaymem.resize(m_internalWidth);
@@ -914,9 +935,9 @@ float JadeSpectrogramGUI::displayHeight() const
 
 float JadeSpectrogramGUI::timeSpan() const
 {
-    // one display column per hop; hop = FFT size / 2 = bins - 1 (50 % overlap)
+    // one display column per hop (the hop travels with the slices)
     const float fs = m_processor.m_algo.getSamplerate();
-    return static_cast<float>(m_internalWidth)*static_cast<float>(m_internalHeight-1)/fs;
+    return static_cast<float>(m_internalWidth)*static_cast<float>(m_currentHop)/fs;
 }
 
 void JadeSpectrogramGUI::drawTimeAxis(juce::Graphics& g, juce::Rectangle<int> display, float textH) const

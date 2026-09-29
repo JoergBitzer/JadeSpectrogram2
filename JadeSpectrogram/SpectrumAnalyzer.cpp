@@ -67,10 +67,10 @@ bool SpectrumAnalyzer::getSpectrum(const std::vector<float> &inputSignal, std::v
     }
     else if (m_overlap == OverlapPercentage::perc75)
     {
-        // 75% overlap
-        memcpy(m_fftInputBuffer.data(), m_mem25aIn.data(), (m_hopSize) * sizeof(float));
+        // 75% overlap: oldest block first (mem25c = 3 hops ago, mem25b = 2, mem25a = 1 hop ago)
+        memcpy(m_fftInputBuffer.data(), m_mem25cIn.data(), (m_hopSize) * sizeof(float));
         memcpy(m_fftInputBuffer.data() + (m_hopSize), m_mem25bIn.data(), (m_hopSize) * sizeof(float));
-        memcpy(m_fftInputBuffer.data() + 2 * (m_hopSize), m_mem25cIn.data(), (m_hopSize) * sizeof(float));
+        memcpy(m_fftInputBuffer.data() + 2 * (m_hopSize), m_mem25aIn.data(), (m_hopSize) * sizeof(float));
         memcpy(m_fftInputBuffer.data() + 3 * (m_hopSize), inputSignal.data(), (m_hopSize) * sizeof(float));
 
         // update memory
