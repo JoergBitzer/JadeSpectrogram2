@@ -20,7 +20,8 @@ public:
         const float pMin = static_cast<float>(getPositionOfValue(getMinValue()));
         const float pMax = static_cast<float>(getPositionOfValue(getMaxValue()));
         const float lo = std::min(pMin, pMax), hi = std::max(pMin, pMax);
-        const float grab = 6.f; // pixels around a thumb that still grab the thumb
+        // near a thumb (inside the range) still grabs the thumb; the drawn thumbs lie outside the range
+        const float grab = juce::jmax(6.f, 0.3f*static_cast<float>(isVertical() ? getWidth() : getHeight()));
         if (isEnabled() && p > lo + grab && p < hi - grab)
         {
             m_rangeDrag = true;

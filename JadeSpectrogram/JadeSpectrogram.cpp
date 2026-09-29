@@ -328,7 +328,7 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::keyboardOverlay, "Keyboard overlay", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::bpmGrid, "BPM grid", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::bpmResolution, "BPM grid resolution",
-        StringArray{"1 beat", "1/2 beat", "1/4 beat", "1/8 beat"}, 0, choice));
+        StringArray{"1 beat", "1/2 beat", "1/4 beat", "1/8 beat", "1/16 beat"}, 0, choice));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
     const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
@@ -413,14 +413,14 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_colorRangeBinding = std::make_unique<RangeParameterBinding>(m_colorRangeSlider, m_apvts, paramDisplayMinColor.ID, paramDisplayMaxColor.ID);
     m_colorRangeBinding->onChange = [this]() { if (somethingChanged != nullptr) somethingChanged(); };
     addAndMakeVisible(m_colorRangeSlider);
-    // the selected range in light red between the red thumbs (track and background are both
+    // the selected range in dark grey between the red thumbs (track and background are both
     // grey in the Jade look and feel, which would hide the range)
     m_timeRangeSlider.setRange(0.0, 1.0);
     m_timeRangeSlider.setTooltip("Time zoom: drag a thumb, or drag between the thumbs to move the visible part");
     m_timeRangeBinding = std::make_unique<RangeParameterBinding>(m_timeRangeSlider, m_apvts, JadeParamID::timeStart, JadeParamID::timeEnd);
     addAndMakeVisible(m_timeRangeSlider);
     for (auto* rs : {&m_freqRangeSlider, &m_colorRangeSlider, &m_timeRangeSlider})
-        rs->setColour(juce::Slider::trackColourId, JadeLightRed1);
+        rs->setColour(juce::Slider::trackColourId, JadeDarkGray);
 
     // pause bars while running (click pauses), play triangle while paused (click continues);
     // highlighted while paused
@@ -489,8 +489,9 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_bpmResolutionCombo.addItem("1/2", 2);
     m_bpmResolutionCombo.addItem("1/4", 3);
     m_bpmResolutionCombo.addItem("1/8", 4);
+    m_bpmResolutionCombo.addItem("1/16", 5);
     m_bpmResolutionCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId, JadeTeal);
-    m_bpmResolutionCombo.setTooltip("Grid resolution: every beat, 1/2, 1/4 or 1/8 beat");
+    m_bpmResolutionCombo.setTooltip("Grid resolution: every beat, 1/2, 1/4, 1/8 or 1/16 beat");
     m_bpmResolutionAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::bpmResolution, m_bpmResolutionCombo);
     m_bpmLabel.setJustificationType(juce::Justification::centredLeft);
     m_bpmLabel.setColour(juce::Label::textColourId, JadeGray);
@@ -555,7 +556,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
         return v <= hopMs ? String("off") : String(juce::roundToInt(v)) + " ms";
     };
     m_averagingSlider.valueFromTextFunction = [](const String& t) { return t.trimStart().startsWithIgnoreCase("off") ? 0.0 : t.getDoubleValue(); };
-    m_averagingSlider.setColour(juce::Slider::trackColourId, JadeLightRed1);
+    m_averagingSlider.setColour(juce::Slider::trackColourId, JadeDarkGray);
     m_averagingSlider.updateText();
     addAndMakeVisible(m_averagingSlider);
     addAndMakeVisible(m_fftSizeCombo);
@@ -1163,14 +1164,14 @@ void JadeSpectrogramGUI::updateBpmLabel()
 void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const
 {
     // Vertical lines where the musical position of the columns crosses a bar, a beat or a subdivision
-    // (1, 1/2, 1/4, 1/8 beat), interpolated between the two columns. No lines where the position
+    // (1, 1/2, 1/4, 1/8, 1/16 beat), interpolated between the two columns. No lines where the position
     // does not advance (transport stopped) or jumps (locate, loop), or without host tempo. Finer
     // levels are left out where their lines would come closer than 5 px. White with a dark shadow,
     // so they are visible on bright and on dark parts of the spectrogram.
     const size_t W = m_internalWidth;
     if (W < 2 || m_columnBeat.size() != W)
         return;
-    const int resolution = juce::jlimit(0, 3, juce::roundToInt(m_apvts.getRawParameterValue(JadeParamID::bpmResolution)->load()));
+    const int resolution = juce::jlimit(0, 4, juce::roundToInt(m_apvts.getRawParameterValue(JadeParamID::bpmResolution)->load()));
     const double subdivision = static_cast<double>(1 << resolution); // lines per beat
     const float dx = static_cast<float>(display.getX()), dw = static_cast<float>(display.getWidth());
     const float span = m_timeEnd - m_timeStart;
@@ -1215,7 +1216,7 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
             const bool isBeat = std::abs(inBeat - std::round(inBeat)) < 1e-6;
             // snapped to the pixel centre: a crisp line of the same intensity everywhere (error < 0.5 px)
             const float x = std::floor(xa + static_cast<float>((pos - a.ppq)/(b.ppq - a.ppq))*(xb - xa)) + 0.5f;
-            const float alpha = isBar ? 0.9f : (isBeat ? 0.65f : 0.35f);
+            const float alpha = isBar ? 0.6f : (isBeat ? 0.45f : 0.25f);
             const float width = isBar ? 2.f : 1.f;
             g.setColour(juce::Colours::black.withAlpha(0.5f*alpha));
             g.drawLine(x + width, top, x + width, bottom, width);

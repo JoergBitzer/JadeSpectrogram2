@@ -12,8 +12,9 @@ JadeLookAndFeel::JadeLookAndFeel()
 	setColour(juce::Label::ColourIds::textColourId, JadeGray);
 
 	setColour(juce::TextButton::ColourIds::buttonColourId, JadeGray);
-	setColour(juce::TextButton::ColourIds::buttonOnColourId, juce::Colours::darkgrey);
-	setColour(juce::TextButton::ColourIds::textColourOnId, JadeLightRed1);
+	// switched on: dark grey background with a white symbol (no pink)
+	setColour(juce::TextButton::ColourIds::buttonOnColourId, JadeDarkGray);
+	setColour(juce::TextButton::ColourIds::textColourOnId, JadeWhite);
 	setColour(juce::TextButton::ColourIds::textColourOffId, JadeWhite);
 	m_fontSize = 12;
 
@@ -50,4 +51,57 @@ void JadeLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int widt
 	g.setColour(JadeRed);
 	g.fillPath(p);
 
+}
+
+static bool isTwoValue(juce::Slider::SliderStyle style)
+{
+	return style == juce::Slider::TwoValueHorizontal || style == juce::Slider::TwoValueVertical;
+}
+
+int JadeLookAndFeel::getSliderThumbRadius(juce::Slider& slider)
+{
+	if (!isTwoValue(slider.getSliderStyle()))
+		return LookAndFeel_V4::getSliderThumbRadius(slider);
+	// the triangles lie outside the range: reserve their length at both ends of the slider
+	const float across = slider.isVertical() ? static_cast<float>(slider.getWidth()) : static_cast<float>(slider.getHeight());
+	return juce::jmax(4, static_cast<int>(0.62f*0.9f*across));
+}
+
+void JadeLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+	float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle style, juce::Slider& slider)
+{
+	if (!isTwoValue(style))
+	{
+		LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+		return;
+	}
+	const bool vertical = slider.isVertical();
+	const float across = vertical ? static_cast<float>(width) : static_cast<float>(height);
+	const float centre = vertical ? static_cast<float>(x) + 0.5f*static_cast<float>(width) : static_cast<float>(y) + 0.5f*static_cast<float>(height);
+	const float start = vertical ? static_cast<float>(y) : static_cast<float>(x);
+	const float end = vertical ? static_cast<float>(y + height) : static_cast<float>(x + width);
+	auto line = [&](float a, float b, float thickness)
+	{
+		if (vertical) g.drawLine(centre, a, centre, b, thickness);
+		else          g.drawLine(a, centre, b, centre, thickness);
+	};
+	// whole range thin, the selected range thicker and dark
+	g.setColour(slider.findColour(juce::Slider::backgroundColourId));
+	line(start, end, juce::jmax(2.f, 0.2f*across));
+	g.setColour(slider.findColour(juce::Slider::trackColourId));
+	line(minSliderPos, maxSliderPos, juce::jmax(3.f, 0.4f*across));
+	// thumbs: triangles with the apex at the value, pointing into the range
+	const float w = 0.9f*across;       // across the slider
+	const float l = 0.62f*w;           // along the slider
+	g.setColour(slider.findColour(juce::Slider::thumbColourId));
+	auto triangle = [&](float pos, float direction) // direction: +1 thumb extends to larger coordinates
+	{
+		juce::Path p;
+		if (vertical) p.addTriangle(centre, pos, centre - 0.5f*w, pos + direction*l, centre + 0.5f*w, pos + direction*l);
+		else          p.addTriangle(pos, centre, pos + direction*l, centre - 0.5f*w, pos + direction*l, centre + 0.5f*w);
+		g.fillPath(p);
+	};
+	// vertical: the minimum is at the bottom (larger y), its thumb below; horizontal: the minimum is left
+	triangle(minSliderPos, vertical ? +1.f : -1.f);
+	triangle(maxSliderPos, vertical ? -1.f : +1.f);
 }

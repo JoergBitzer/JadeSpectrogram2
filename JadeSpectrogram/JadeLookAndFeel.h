@@ -25,6 +25,8 @@ const auto JadeRed(juce::Colour::fromFloatRGBA(0.890196078431373f, 0.02352941176
 const auto JadeTeal(juce::Colour::fromFloatRGBA(0.352941176470588f, 0.372549019607843f, 0.337254901960784f, 1.f));
 const auto JadeGray(juce::Colour::fromFloatRGBA(0.356862745098039f, 0.372549019607843f, 0.341176470588235f, 1.f));
 
+// darker grey: the selected range of range sliders and the background of switched-on buttons
+const auto JadeDarkGray(juce::Colour::fromFloatRGBA(0.17f, 0.18f, 0.16f, 1.f));
 const auto JadeLightRed1(juce::Colour::fromFloatRGBA(0.956862745098039f, 0.631372549019608f, 0.552941176470588f, 1.f));
 const auto JadeLightRed2(juce::Colour::fromFloatRGBA(0.968627450980392f, 0.733333333333333f, 0.682352941176471f, 1.f));
 const auto JadeLightRed3(juce::Colour::fromFloatRGBA(0.980392156862745f, 0.807843137254902f, 0.776470588235294f, 1.f));
@@ -50,6 +52,11 @@ private:
 	float m_fontSize;
 	void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
 		const float rotaryStartAngle, const float rotaryEndAngle, juce::Slider& slider) override;
+	// two-value (range) sliders: thin grey track, the selected range thicker in dark grey, and
+	// large triangular thumbs outside the range (easy to grab); other sliders as LookAndFeel_V4
+	void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+		float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle style, juce::Slider& slider) override;
+	int getSliderThumbRadius(juce::Slider& slider) override;
 
 void drawButtonText (juce::Graphics& g, juce::TextButton& button,
 		bool /*shouldDrawButtonAsHighlighted*/, bool /*shouldDrawButtonAsDown*/)
