@@ -1,27 +1,16 @@
 # JadeSpectrogram2 – planning
 
-Ideas for improving the plugin, collected from a code review (September 2026, v1.2.4).
+Ideas for improving the plugin, collected from a code review (September 2026, v1.2.4;
+updated for v1.2.5).
 Items marked **bug** are verified in the code; the rest are proposals. Within each section
 the most useful items come first.
 
 ## 1. Bugs found during the review
 
-- **bug: `TimeMean` mix mode leaves the spectrum stale.** `processSynchronBlock` averages
-  the channels in the time domain for `TimeMean`, but the `switch (m_mixMode)` that fills
-  `m_power` has no `TimeMean` case, so `m_power` keeps the previous values (the compiler
-  warns: `enumeration value 'TimeMean' not handled in switch`). This is not visible yet
-  because no GUI element calls `setChannelMixMode`. Fix: `case TimeMean: m_power = m_perLeft;`.
-- **bug: the default colormap is inconsistent.** The palette is constructed as `kHot`, the
-  combo box shows item 7 "Jade" (`setSelectedItemIndex(6, dontSendNotification)`, so the
-  palette is not changed), and the README says the default is plasma. Choose one and apply it
-  in the constructor.
-- **bug: the mouse readout can index past the spectrum.** `setLabelText` computes
-  `freqindex = m_internalHeight * freq / fshalf`. At `freq == fs/2` (top of the display
-  when the max frequency is clamped to fs/2, e.g. fs ≤ 40 kHz) the index equals
-  `m_internalHeight`, and `m_displaymem.at()` throws. Use `(m_internalHeight - 1)` and clamp.
-- **README claims a JUCE FFT**, but the analyzers use the `spectrum` class from
-  `TGMStaticLib/FFT.h` (Uwe Simmer's FFT, double precision internally). Either fix the
-  README or actually switch (see 5.).
+All fixed in v1.2.5: the `TimeMean` mix mode left the spectrum stale (missing `switch`
+case), the default colormap was set in three different ways (now Plasma everywhere), the
+mouse readout could index past the spectrum at fs/2, and the README claimed the JUCE FFT
+(the plugin uses the internal FFT from `TGMStaticLib`).
 
 ## 2. Real-time safety (remaining items)
 
@@ -91,13 +80,14 @@ latency change when the transport stops, and a changing latency is annoying in a
 - Reduce warnings (sign conversions, `-Wswitch`, shadowed `p` in `timerCallback`).
 - Remove unused code: `BlockFreeFiFo.h`, `m_fftsize`/`setFFTSize` in the processor,
   `getBlock()`/`getNumAvailableToRead()` if they stay unused, the `WOLA` class if not needed.
-- Consider the JUCE FFT (`juce::dsp::FFT`) or a float FFT: the TGM `spectrum` class
-  computes in double and converts, which costs time at large FFT sizes.
+- FFT: keep the internal FFT. `tester/fftBenchmark` (Release, Linux, JUCE fallback engine)
+  measured it 2.0-2.8x faster than `juce::dsp::FFT` for 512-8192 points, with identical
+  results (max. relative difference 1.5e-7). On macOS JUCE would use Apple vDSP instead;
+  run the benchmark there before drawing conclusions for Mac.
 
 ## Suggested order
 
-1. Fix the bugs in section 1 (small, visible to users).
-2. Zero-latency pass-through (section 3): removes a whole class of host problems.
-3. Remaining real-time items (section 2) and the tests/CI (section 6).
-4. Log frequency axis, overlap selection, saving the GUI settings.
-5. Larger features: stereo views, multi-resolution, export.
+1. Zero-latency pass-through (section 3): removes a whole class of host problems.
+2. Remaining real-time items (section 2) and the tests/CI (section 6).
+3. Log frequency axis, overlap selection, saving the GUI settings.
+4. Larger features: stereo views, multi-resolution, export.

@@ -57,6 +57,7 @@ add_subdirectory(TGMStaticLib)
 
 # add tester
 add_subdirectory(tester/spectrumAnalyzerTester)
+add_subdirectory(tester/fftBenchmark)
 
 # Add your projects
 
