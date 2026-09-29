@@ -12,6 +12,7 @@
 #include "TwoDimBlockFreeFiFo.h"
 #include "CColorpalette.h"
 #include "IconButton.h"
+#include "RangeSlider.h"
 #include "JadeLookAndFeel.h"
 
 class JadeSpectrogramAudioProcessor;
@@ -197,21 +198,13 @@ private:
 
 // Othe UI Elements
 
-    Label m_DisplayMinFreqLabel;
-    Slider m_DisplayMinFreqSlider;
-    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMinFreqAttachment;
-
-    Label m_DisplayMaxFreqLabel;
-    Slider m_DisplayMaxFreqSlider;
-    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMaxFreqAttachment;
-
-    Label m_DisplayMinColorLabel;
-    Slider m_DisplayMinColorSlider;
-    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMinColorAttachment;
-
-    Label m_DisplayMaxColorLabel;
-    Slider m_DisplayMaxColorSlider;
-    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMaxColorAttachment;
+    // range sliders (V2 decision 7): frequency range left, colour range right
+    RangeSlider m_freqRangeSlider {true};
+    RangeSlider m_colorRangeSlider {true};
+    std::unique_ptr<RangeParameterBinding> m_freqRangeBinding;
+    std::unique_ptr<RangeParameterBinding> m_colorRangeBinding;
+    float m_lastColorMin = 0.f, m_lastColorMax = 0.f; // palette range of the current image
+    void setFloatParameter(const juce::String& id, float plainValue);
 
     TextButton m_runModeButton;
     IconButton m_pauseButton; // pause / play symbol

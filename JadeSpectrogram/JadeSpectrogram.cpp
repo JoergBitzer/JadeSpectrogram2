@@ -327,41 +327,21 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_colorpalette.setValueRange(m_minColorVal,m_maxColorVal);
 
 // UI Elements
-	m_DisplayMinFreqLabel.setText("Freq.", NotificationType::dontSendNotification);
-	m_DisplayMinFreqLabel.setJustificationType(Justification::centred);
-	//m_DisplayMinFreqLabel.attachToComponent (&m_DisplayMinFreqSlider, false);
-	//addAndMakeVisible(m_DisplayMinFreqLabel);
-	m_DisplayMinFreqSlider.setSliderStyle(Slider::SliderStyle::LinearVertical);
-	m_DisplayMinFreqAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, paramDisplayMinFreq.ID, m_DisplayMinFreqSlider);
-	addAndMakeVisible(m_DisplayMinFreqSlider);
-	m_DisplayMinFreqSlider.onValueChange = [this]() {if (somethingChanged != nullptr) somethingChanged(); };
-
-	m_DisplayMaxFreqLabel.setText("Freq.", NotificationType::dontSendNotification);
-	m_DisplayMaxFreqLabel.setJustificationType(Justification::centred);
-	//m_DisplayMaxFreqLabel.attachToComponent (&m_DisplayMaxFreqSlider, false);
-	//addAndMakeVisible(m_DisplayMaxFreqLabel);
-	m_DisplayMaxFreqSlider.setSliderStyle(Slider::SliderStyle::LinearVertical);
-	m_DisplayMaxFreqAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, paramDisplayMaxFreq.ID, m_DisplayMaxFreqSlider);
-	addAndMakeVisible(m_DisplayMaxFreqSlider);
-	m_DisplayMaxFreqSlider.onValueChange = [this]() {if (somethingChanged != nullptr) somethingChanged(); };
-
-	m_DisplayMinColorLabel.setText("Color.", NotificationType::dontSendNotification);
-	m_DisplayMinColorLabel.setJustificationType(Justification::centred);
-	//m_DisplayMinColorLabel.attachToComponent (&m_DisplayMinColorSlider, false);
-	//addAndMakeVisible(m_DisplayMinColorLabel);
-	m_DisplayMinColorSlider.setSliderStyle(Slider::SliderStyle::LinearVertical);
-	m_DisplayMinColorAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, paramDisplayMinColor.ID, m_DisplayMinColorSlider);
-	addAndMakeVisible(m_DisplayMinColorSlider);
-	m_DisplayMinColorSlider.onValueChange = [this]() {m_recomputeAll = true; if (somethingChanged != nullptr) somethingChanged(); };
-
-	m_DisplayMaxColorLabel.setText("Color.", NotificationType::dontSendNotification);
-	m_DisplayMaxColorLabel.setJustificationType(Justification::centred);
-	//m_DisplayMaxColorLabel.attachToComponent (&m_DisplayMaxColorSlider, false);
-	//addAndMakeVisible(m_DisplayMaxColorLabel);
-	m_DisplayMaxColorSlider.setSliderStyle(Slider::SliderStyle::LinearVertical);
-	m_DisplayMaxColorAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, paramDisplayMaxColor.ID, m_DisplayMaxColorSlider);
-	addAndMakeVisible(m_DisplayMaxColorSlider);
-	m_DisplayMaxColorSlider.onValueChange = [this]() { m_recomputeAll = true; if (somethingChanged != nullptr) somethingChanged(); };
+    // frequency range (log values of MinFreq/MaxFreq, 1 Hz ... 20 kHz) and colour range (dB)
+    m_freqRangeSlider.setRange(std::log(1.0), std::log(20000.0));
+    m_freqRangeSlider.setTooltip("Displayed frequency range: drag a thumb, or drag between the thumbs to move the range");
+    m_freqRangeBinding = std::make_unique<RangeParameterBinding>(m_freqRangeSlider, m_apvts, paramDisplayMinFreq.ID, paramDisplayMaxFreq.ID);
+    m_freqRangeBinding->onChange = [this]() { if (somethingChanged != nullptr) somethingChanged(); };
+    addAndMakeVisible(m_freqRangeSlider);
+    m_colorRangeSlider.setRange(g_minColorVal, g_maxColorVal);
+    m_colorRangeSlider.setTooltip("Colour range in dB: drag a thumb, or drag between the thumbs to move the range");
+    m_colorRangeBinding = std::make_unique<RangeParameterBinding>(m_colorRangeSlider, m_apvts, paramDisplayMinColor.ID, paramDisplayMaxColor.ID);
+    m_colorRangeBinding->onChange = [this]() { if (somethingChanged != nullptr) somethingChanged(); };
+    addAndMakeVisible(m_colorRangeSlider);
+    // the selected range in light red between the red thumbs (track and background are both
+    // grey in the Jade look and feel, which would hide the range)
+    for (auto* rs : {&m_freqRangeSlider, &m_colorRangeSlider})
+        rs->setColour(juce::Slider::trackColourId, JadeLightRed1);
 
     // pause bars while running (click pauses), play triangle while paused (click continues);
     // highlighted while paused
@@ -540,10 +520,9 @@ void JadeSpectrogramGUI::resized()
     const float sf = m_scaleFactor;
     auto sc = [sf](float v) { return static_cast<int>(sf*v); };
     const int top = display.getY();
-    m_DisplayMaxFreqSlider.setBounds(sc(g_SliderMaxFreq_x), top + sc(g_SliderMaxFreq_y), sc(g_SliderWidth), sc(g_SliderHeight));
-    m_DisplayMinFreqSlider.setBounds(sc(g_SliderMinFreq_x), top + sc(g_SliderMinFreq_y), sc(g_SliderWidth), sc(g_SliderHeight));
-    m_DisplayMaxColorSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top + sc(g_SliderMaxColor_y), sc(g_SliderWidth), sc(g_SliderHeight));
-    m_DisplayMinColorSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top + sc(g_SliderMinColor_y), sc(g_SliderWidth), sc(g_SliderHeight));
+    // range sliders along the full display height
+    m_freqRangeSlider.setBounds(sc(g_SliderMinFreq_x), top, sc(g_SliderWidth), display.getHeight());
+    m_colorRangeSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top, sc(g_SliderWidth), display.getHeight());
 
     // bottom row, left to right below the display: pause, run/fix, window, FFT size
     // (overlap and averaging follow in later versions); colour map below the colour bar
@@ -563,8 +542,16 @@ void JadeSpectrogramGUI::resized()
 
 void JadeSpectrogramGUI::timerCallback()
 {
-    float maxValColor = m_DisplayMaxColorSlider.getValue();
-    float minValColor = m_DisplayMinColorSlider.getValue();
+    // parameters -> range sliders (restored project, preset, automation)
+    m_freqRangeBinding->update();
+    m_colorRangeBinding->update();
+    const float minValColor = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
+    const float maxValColor = m_apvts.getRawParameterValue(paramDisplayMaxColor.ID)->load();
+    if (!juce::approximatelyEqual(minValColor, m_lastColorMin) || !juce::approximatelyEqual(maxValColor, m_lastColorMax))
+    {
+        m_lastColorMin = minValColor; m_lastColorMax = maxValColor;
+        m_recomputeAll = true; // all pixels get new colours
+    }
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
     syncFromParameters();     // lin/log, Run/Fix (restored project, preset)
@@ -757,6 +744,16 @@ void JadeSpectrogramGUI::setDisplayMode(bool fixed)
     m_recomputeAll = true; // the columns are arranged differently in both modes
 }
 
+void JadeSpectrogramGUI::setFloatParameter(const juce::String& id, float plainValue)
+{
+    if (auto* p = dynamic_cast<juce::RangedAudioParameter*>(m_apvts.getParameter(id)))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost(p->convertTo0to1(plainValue));
+        p->endChangeGesture();
+    }
+}
+
 void JadeSpectrogramGUI::setBoolParameter(const juce::String& id, bool value)
 {
     if (auto* p = m_apvts.getParameter(id))
@@ -826,8 +823,8 @@ void JadeSpectrogramGUI::freqAxisClicked()
 void JadeSpectrogramGUI::updateDisplayRange()
 {
     const float fs = m_processor.m_algo.getSamplerate();
-    m_minDisplayFreq = static_cast<float>(exp(m_DisplayMinFreqSlider.getValue()));
-    m_maxDisplayFreq = static_cast<float>(exp(m_DisplayMaxFreqSlider.getValue()));
+    m_minDisplayFreq = std::exp(m_apvts.getRawParameterValue(paramDisplayMinFreq.ID)->load());
+    m_maxDisplayFreq = std::exp(m_apvts.getRawParameterValue(paramDisplayMaxFreq.ID)->load());
 
     if (m_minDisplayFreq >= fs*0.5f)
         m_minDisplayFreq = 0.9f*fs*0.5f;
@@ -838,8 +835,8 @@ void JadeSpectrogramGUI::updateDisplayRange()
     {
         //m_minDisplayFreq = 0.8f*m_maxDisplayFreq;
         m_maxDisplayFreq = 1.1f*m_minDisplayFreq;
-        m_DisplayMaxFreqSlider.setValue(log(1.1f*m_minDisplayFreq));
-        m_DisplayMinFreqSlider.setValue(log(m_minDisplayFreq));
+        setFloatParameter(paramDisplayMaxFreq.ID, std::log(1.1f*m_minDisplayFreq));
+        setFloatParameter(paramDisplayMinFreq.ID, std::log(m_minDisplayFreq));
     }
 }
 

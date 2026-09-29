@@ -153,8 +153,9 @@ final layout below is the target.
    label removed, bottom row left to right below the display.
 2. ~~**1.7.0 Save all settings**~~ -- done: FFT size, window, colour map, lin/log and
    Run/Fix are non-automatable parameters (JadeParamID); the following steps add theirs.
-3. **1.8.0 Range sliders for frequency and colour** (decision 7, vertical) instead of the
-   two frequency sliders and the two colour sliders.
+3. ~~**1.8.0 Range sliders for frequency and colour**~~ -- done: `RangeSlider` (drag between
+   the thumbs moves the range) and `RangeParameterBinding` (RangeSlider.h), selected range
+   in light red.
 4. **1.9.0 Averaging** (item 5 of the old list): exponential smoothing along time, a first
    order IIR filter per bin on the power spectrum in the audio thread (before the dB
    conversion, so it does not depend on the GUI frame rate), coefficient from tau and the
