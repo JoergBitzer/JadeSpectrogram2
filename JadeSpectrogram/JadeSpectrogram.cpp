@@ -416,12 +416,6 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     }
 
 
-    //int displayStartPixel = int(2.0f*m_minDisplayFreq/fs *m_internalHeight+0.5f);
-    int displayEndPixel = int(2.0f*m_maxDisplayFreq/fs *m_internalHeight + 0.5f);
-    int heightInterval = int(2.0f*m_maxDisplayFreq/fs *m_internalHeight -2.0f*m_minDisplayFreq/fs *m_internalHeight+0.5f);
-
-    int hStart = static_cast<int>(m_internalHeight) - displayEndPixel;
-
     int wStartPic =static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter));
 
     int TextHeight = 20;
@@ -451,8 +445,22 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     }
     else
     {
-    g.drawImage(m_internalImg,wStartPic,0,static_cast<int>(0.8f*w),int(float(h)-m_scaleFactor*g_menuHeight+0.5),
-                0,hStart,static_cast<int>(m_internalWidth),heightInterval);
+    // Linear axis: image row H-1-k shows bin k (frequency k*binWidth); the centre of that row has to
+    // land exactly on the axis position of k*binWidth. A transform instead of an integer source
+    // rectangle, so neither the half-row offset nor rounding to whole rows shifts the bins.
+    {
+        const int displayW = static_cast<int>(0.8f*w);
+        const int displayH = int(float(h)-m_scaleFactor*g_menuHeight+0.5);
+        const float binWidth = 0.5f*fs/static_cast<float>(m_internalHeight-1);
+        const float rowsShown = (m_maxDisplayFreq - m_minDisplayFreq)/binWidth; // image rows between min and max
+        const float rowTop = static_cast<float>(m_internalHeight) - 0.5f - m_maxDisplayFreq/binWidth; // image coordinate of max
+        const float sx = static_cast<float>(displayW)/static_cast<float>(m_internalWidth);
+        const float sy = static_cast<float>(displayH)/rowsShown;
+        juce::Graphics::ScopedSaveState state(g);
+        g.reduceClipRegion(wStartPic, 0, displayW, displayH);
+        g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
+                                                  .translated(static_cast<float>(wStartPic), -rowTop*sy));
+    }
     // Add frequency scale
     RangePerTick = float(m_maxDisplayFreq - m_minDisplayFreq)/(nrOfYTicks-1);
     g.setFont(0.8*m_scaleFactor*TextHeight);
