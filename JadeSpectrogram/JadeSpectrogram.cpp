@@ -60,6 +60,17 @@ void JadeSpectrogramAudio::processBlock(juce::AudioBuffer<float>& data, juce::Mi
 
 void JadeSpectrogramAudio::applyPendingChanges()
 {
+    if (m_fftSizeParam != nullptr) // saved settings drive FFT size and window
+    {
+        const int idx = juce::jlimit(0, static_cast<int>(g_nrOfFFTSizes)-1, juce::roundToInt(m_fftSizeParam->load(std::memory_order_relaxed)));
+        m_requestedFFTSize.store(size_t(1) << (g_minFFTSizeLog2 + static_cast<size_t>(idx)));
+    }
+    if (m_windowParam != nullptr)
+    {
+        const int idx = juce::jlimit(0, static_cast<int>(SpectrumAnalyzer::WindowType::NrOfWindowTypes)-1,
+                                     juce::roundToInt(m_windowParam->load(std::memory_order_relaxed)));
+        m_requestedWindow.store(static_cast<SpectrumAnalyzer::WindowType>(idx));
+    }
     const size_t requestedFFTSize = m_requestedFFTSize.load();
     if (requestedFFTSize != m_fftsize)
         switchFFTSize(requestedFFTSize);
@@ -196,6 +207,8 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     return 0;
 }
 
+static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioParameter>> &paramVector);
+
 void JadeSpectrogramAudio::addParameter(std::vector<std::unique_ptr<juce::RangedAudioParameter>> &paramVector)
 {
     // this is just a placeholder (necessary for compiling/testing the template)
@@ -242,10 +255,31 @@ void JadeSpectrogramAudio::addParameter(std::vector<std::unique_ptr<juce::Ranged
                                     .withStringFromValueFunction (std::move ([](float value, int MaxLen) { return (String(1.0*int((value) + 0.5), MaxLen)); }))
                                     .withValueFromStringFunction (std::move ([](const String& text) {return text.getFloatValue(); }))
     ));
+
+    addDisplaySettings(paramVector);
+}
+
+// display settings: saved with the project, not automatable
+static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioParameter>> &paramVector)
+{
+    const auto choice = AudioParameterChoiceAttributes().withAutomatable(false);
+    const auto boolean = AudioParameterBoolAttributes().withAutomatable(false);
+    paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::fftSize, "FFT size",
+        StringArray{"512", "1024", "2048", "4096", "8192"}, 2, choice));
+    paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::window, "Window",
+        StringArray{"Rectangular", "Hann", "Hamming", "BlackmanHarris", "FlatTop", "HannPoisson"},
+        static_cast<int>(SpectrumAnalyzer::WindowType::Hann), choice));
+    paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::colorMap, "Colour map",
+        StringArray{"Mono", "BW", "Hot", "Rainbow", "Viridis", "Plasma", "Jade"},
+        static_cast<int>(CColorPalette::PaletteName::kPlasma), choice));
+    paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::logFreqAxis, "Log frequency axis", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
 }
 
 void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessorValueTreeState> &vts)
 {
+    m_fftSizeParam = vts->getRawParameterValue(JadeParamID::fftSize);
+    m_windowParam = vts->getRawParameterValue(JadeParamID::window);
     m_DisplayMinFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMinFreq.ID));
     m_DisplayMaxFreq.prepareParameter(vts->getRawParameterValue(paramDisplayMaxFreq.ID));
     m_DisplayMinColor.prepareParameter(vts->getRawParameterValue(paramDisplayMinColor.ID));
@@ -353,16 +387,15 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_pauseButton.onClick = [this](){pauseClicked();};
     addAndMakeVisible(m_pauseButton);
 
-    m_logFreqAxis = m_processor.getLogFreqAxis();
+    syncFromParameters(); // lin/log and Run/Fix from the saved settings
     setFreqAxisButtonText();
     m_freqAxisButton.onClick = [this](){freqAxisClicked();};
     updateDisplayRange();
     // no addAndMakeVisible here: the editor shows the button above the frequency axis (title bar)
     updateFrequencyMapping();
 
-    m_runModeButton.setButtonText("Fix");
-    m_runModeButton.setToggleState(false,NotificationType::dontSendNotification);
     m_runModeButton.onClick = [this](){runClicked();};
+    setDisplayMode(m_isRunningDisplay); // label for the restored mode (syncFromParameters above)
     addAndMakeVisible(m_runModeButton);
 
     m_colorScheme.addItem("Mono",1);
@@ -375,6 +408,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_colorScheme.setSelectedItemIndex(static_cast<int>(CColorPalette::PaletteName::kPlasma),NotificationType::dontSendNotification);
     m_colorScheme.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
     m_colorScheme.onChange = [this](){m_recomputeAll = true; m_colorpalette.setColorScheme(static_cast<CColorPalette::PaletteName>(m_colorScheme.getSelectedItemIndex()));};
+    m_colorSchemeAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::colorMap, m_colorScheme);
     addAndMakeVisible(m_colorScheme);
     m_windowFktCombo.addItem("Rectangular",1);
     m_windowFktCombo.addItem("Hann",2);
@@ -383,8 +417,8 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_windowFktCombo.addItem("FlatTop",5);
     m_windowFktCombo.addItem("HannPoisson",6);
     m_windowFktCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
-    m_windowFktCombo.onChange = [this](){m_processor.m_algo.setWindowType(static_cast<SpectrumAnalyzer::WindowType> (m_windowFktCombo.getSelectedItemIndex()));};
-    m_windowFktCombo.setSelectedItemIndex(1,NotificationType::dontSendNotification);
+    // window and FFT size: the audio thread reads the parameters (JadeParamID)
+    m_windowAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::window, m_windowFktCombo);
     addAndMakeVisible(m_windowFktCombo);
 
     m_fftSizeCombo.addItem("512",1);
@@ -393,11 +427,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_fftSizeCombo.addItem("4096",4);
     m_fftSizeCombo.addItem("8192",5);
     m_fftSizeCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
-    m_fftSizeCombo.onChange = [this](){changeFFTSize();};
-
-    // show the size the processor runs with (the editor may be reopened after a change)
-    int fftSizeIndex = static_cast<int>(std::log2(static_cast<double>(m_processor.m_algo.getFFTSize()))) - 9;
-    m_fftSizeCombo.setSelectedItemIndex(juce::jlimit(0, 4, fftSizeIndex),NotificationType::dontSendNotification);
+    m_fftSizeAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::fftSize, m_fftSizeCombo);
     addAndMakeVisible(m_fftSizeCombo);
 
     startTimer(40) ;
@@ -537,6 +567,7 @@ void JadeSpectrogramGUI::timerCallback()
     float minValColor = m_DisplayMinColorSlider.getValue();
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
+    syncFromParameters();     // lin/log, Run/Fix (restored project, preset)
     updateDisplayRange();     // frequency sliders -> displayed range
     updateFrequencyMapping(); // image layout for this range (LinearMax, Log)
 
@@ -705,8 +736,13 @@ void JadeSpectrogramGUI::timerCallback()
 
 void JadeSpectrogramGUI::runClicked()
 {
-    m_isRunningDisplay = !m_isRunningDisplay;
-    
+    setBoolParameter(JadeParamID::fixDisplay, !m_isRunningDisplay);
+    syncFromParameters();
+}
+
+void JadeSpectrogramGUI::setDisplayMode(bool fixed)
+{
+    m_isRunningDisplay = fixed;
     // the label shows what a click does (as at startup: scrolling display -> "Fix")
     if (m_isRunningDisplay) // fixed image, red cursor runs over it
     {
@@ -717,8 +753,34 @@ void JadeSpectrogramGUI::runClicked()
     {
         m_runModeButton.setButtonText("Fix");
         m_runModeButton.setToggleState(false,NotificationType::dontSendNotification);
-    }    
+    }
+    m_recomputeAll = true; // the columns are arranged differently in both modes
 }
+
+void JadeSpectrogramGUI::setBoolParameter(const juce::String& id, bool value)
+{
+    if (auto* p = m_apvts.getParameter(id))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost(value ? 1.f : 0.f);
+        p->endChangeGesture();
+    }
+}
+
+void JadeSpectrogramGUI::syncFromParameters()
+{
+    // message thread; the values change by the buttons, a restored project or a preset
+    const bool logAxis = m_apvts.getRawParameterValue(JadeParamID::logFreqAxis)->load() > 0.5f;
+    if (logAxis != m_logFreqAxis)
+    {
+        m_logFreqAxis = logAxis;
+        setFreqAxisButtonText();
+    }
+    const bool fixed = m_apvts.getRawParameterValue(JadeParamID::fixDisplay)->load() > 0.5f;
+    if (fixed != m_isRunningDisplay)
+        setDisplayMode(fixed);
+}
+
 void JadeSpectrogramGUI::pauseClicked()
 {
     m_isPaused = !m_isPaused;
@@ -731,17 +793,6 @@ void JadeSpectrogramGUI::pauseClicked()
     {
         m_pauseButton.setToggleState(false,NotificationType::dontSendNotification);
     }
-}
-
-void JadeSpectrogramGUI::changeFFTSize()
-{
-    auto FFTSizeIndex = m_fftSizeCombo.getSelectedItemIndex();
-    int fftSize = pow(2.0,9+FFTSizeIndex);
-    
-    //DBG(String(fftSize));
-    // only a request, the audio thread switches at its next block;
-    // the timer picks up the new size with the first slice of that size
-    m_processor.m_algo.setFFTSize(static_cast<size_t>(fftSize));
 }
 
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
@@ -767,9 +818,8 @@ void JadeSpectrogramGUI::setFreqAxisButtonText()
 
 void JadeSpectrogramGUI::freqAxisClicked()
 {
-    m_logFreqAxis = !m_logFreqAxis;
-    m_processor.setLogFreqAxis(m_logFreqAxis);
-    setFreqAxisButtonText();
+    setBoolParameter(JadeParamID::logFreqAxis, !m_logFreqAxis);
+    syncFromParameters();
     timerCallback(); // new mapping and image at once (also repaints)
 }
 

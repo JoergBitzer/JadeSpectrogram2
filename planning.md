@@ -151,8 +151,8 @@ final layout below is the target.
 1. ~~**1.6.0 Layout**~~ -- done: base size 840 x 580, time axis labels (relative time in
    Scroll mode, sweep time in Fix mode), empty zoom strip, Pause as icon button, readout
    label removed, bottom row left to right below the display.
-2. **1.7.0 Save all settings** (decision 9) for the existing controls: FFT size, window,
-   colormap, lin/log, Run/Fix. The following steps add their parameters to it.
+2. ~~**1.7.0 Save all settings**~~ -- done: FFT size, window, colour map, lin/log and
+   Run/Fix are non-automatable parameters (JadeParamID); the following steps add theirs.
 3. **1.8.0 Range sliders for frequency and colour** (decision 7, vertical) instead of the
    two frequency sliders and the two colour sliders.
 4. **1.9.0 Averaging** (item 5 of the old list): exponential smoothing along time, a first

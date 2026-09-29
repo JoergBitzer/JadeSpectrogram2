@@ -55,6 +55,18 @@ const struct
 }paramDisplayMaxColor;
 
 
+// Display settings, saved with the project as non-automatable parameters (decision 9 of the
+// V2 plan). Choice indices: FFT size 512 << index, window = SpectrumAnalyzer::WindowType,
+// colour map = CColorPalette::PaletteName.
+namespace JadeParamID
+{
+    inline const juce::String fftSize {"FFTSize"};
+    inline const juce::String window {"Window"};
+    inline const juce::String colorMap {"ColorMap"};
+    inline const juce::String logFreqAxis {"LogFreqAxis"};
+    inline const juce::String fixDisplay {"FixDisplay"};
+}
+
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
 constexpr size_t g_minFFTSizeLog2 = 9;
 constexpr size_t g_nrOfFFTSizes = 5;
@@ -128,6 +140,10 @@ private:
 	SpectrumAnalyzer::WindowType m_windowChoice; // active window, audio thread only
 
 	void applyPendingChanges(); // audio thread, realtime safe
+	// FFT size and window parameters (raw values of the value tree, lock-free); nullptr without
+	// prepareParameter (tests), then setFFTSize / setWindowType are used directly
+	std::atomic<float>* m_fftSizeParam = nullptr;
+	std::atomic<float>* m_windowParam = nullptr;
 	void switchFFTSize(size_t newFFTSize); // audio thread, realtime safe
 
 	// paramater
@@ -200,7 +216,9 @@ private:
     TextButton m_runModeButton;
     IconButton m_pauseButton; // pause / play symbol
     void pauseClicked();
-    void changeFFTSize();
+    void setDisplayMode(bool fixed); // Fix (fixed image, running cursor) or Scroll
+    void syncFromParameters(); // lin/log and Run/Fix from the saved parameters
+    void setBoolParameter(const juce::String& id, bool value);
     void mouseMove(const MouseEvent &event) override;
     void mouseExit(const MouseEvent &event) override;
     bool setLabelText(int x, int y); // true if (x, y) is inside the analysis display
@@ -247,8 +265,11 @@ private:
     
     //JadeSpectrogramAudioProcessorEditor& m_editor;
     ComboBox m_fftSizeCombo;
+    // after the combo boxes: destroyed before them
+    std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_colorSchemeAttachment;
+    std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_windowAttachment;
+    std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_fftSizeAttachment;
     bool m_hideFFTSizeCombobox;
-    //void changeFFTSize();
     juce::String m_readoutText; // frequency | note | level at the mouse (shown by the crosshair)
 
 };
