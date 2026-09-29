@@ -290,7 +290,9 @@ private:
     // averaging along time (bottom row): "Avg" label, slider with the value ("off" / ms)
     Label m_averagingLabel;
     Slider m_averagingSlider {Slider::LinearHorizontal, Slider::TextBoxRight};
-    std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_averagingAttachment;
+    std::unique_ptr<SliderParameterBinding> m_averagingBinding; // own scale: see makeAveragingRange
+    juce::NormalisableRange<double> makeAveragingRange();
+    void setFreqSliderScale(); // linear or log, as the frequency axis
     bool m_hideFFTSizeCombobox;
     juce::String m_readoutText; // frequency | note | level at the mouse (shown by the crosshair)
 

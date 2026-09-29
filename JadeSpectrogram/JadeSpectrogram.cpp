@@ -375,9 +375,11 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 
 // UI Elements
     // frequency range (log values of MinFreq/MaxFreq, 1 Hz ... 20 kHz) and colour range (dB)
-    m_freqRangeSlider.setRange(std::log(1.0), std::log(20000.0));
+    // slider values in Hz (scale: setFreqSliderScale), the parameters store log(Hz)
+    setFreqSliderScale();
     m_freqRangeSlider.setTooltip("Displayed frequency range: drag a thumb, or drag between the thumbs to move the range");
-    m_freqRangeBinding = std::make_unique<RangeParameterBinding>(m_freqRangeSlider, m_apvts, paramDisplayMinFreq.ID, paramDisplayMaxFreq.ID);
+    m_freqRangeBinding = std::make_unique<RangeParameterBinding>(m_freqRangeSlider, m_apvts, paramDisplayMinFreq.ID, paramDisplayMaxFreq.ID,
+        [](double hz) { return std::log(hz); }, [](double logHz) { return std::exp(logHz); });
     m_freqRangeBinding->onChange = [this]() { if (somethingChanged != nullptr) somethingChanged(); };
     addAndMakeVisible(m_freqRangeSlider);
     m_colorRangeSlider.setRange(g_minColorVal, g_maxColorVal);
@@ -471,8 +473,9 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_averagingLabel.setJustificationType(Justification::centredRight);
     addAndMakeVisible(m_averagingLabel);
     m_averagingSlider.setTooltip("Averaging along time (time constant); leftmost position: off");
-    m_averagingAttachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(m_apvts, JadeParamID::averaging, m_averagingSlider);
-    // after the attachment (it sets the range): the text shows "off" below one hop, as the audio thread does
+    m_averagingSlider.setNormalisableRange(makeAveragingRange());
+    m_averagingBinding = std::make_unique<SliderParameterBinding>(m_averagingSlider, m_apvts, JadeParamID::averaging);
+    // the text shows "off" up to one hop, as the audio thread does
     m_averagingSlider.textFromValueFunction = [this](double v)
     {
         const double hopMs = 1000.0*static_cast<double>(m_currentHop)/static_cast<double>(m_processor.m_algo.getSamplerate());
@@ -633,6 +636,7 @@ void JadeSpectrogramGUI::timerCallback()
     m_freqRangeBinding->update();
     m_colorRangeBinding->update();
     m_timeRangeBinding->update();
+    m_averagingBinding->update();
     updateTimeRange();
     const float minValColor = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
     const float maxValColor = m_apvts.getRawParameterValue(paramDisplayMaxColor.ID)->load();
@@ -674,7 +678,8 @@ void JadeSpectrogramGUI::timerCallback()
             m_exchangeSpectrum.resize(m_internalHeight);
             m_displaymem_writepos = 0;
             updateFrequencyMapping(); // new number of bins: new image size (and log mapping)
-            m_averagingSlider.updateText(); // "off" limit = one hop
+            m_averagingSlider.updateText(); // "off" limit and scale follow the hop
+            m_averagingSlider.repaint();
         }
         stilldataavailable = m_processor.m_algo.getMemSlice(m_exchangeSpectrum);
         if (stilldataavailable)
@@ -921,6 +926,47 @@ void JadeSpectrogramGUI::setFreqAxisButtonText()
     // as the Run/Fix button: the label shows what a click does; same colour in both states
     // (lin and log are equally important)
     m_freqAxisButton.setButtonText(m_logFreqAxis ? "Lin" : "Log");
+    setFreqSliderScale(); // the frequency slider follows the axis
+}
+
+void JadeSpectrogramGUI::setFreqSliderScale()
+{
+    // linear axis: 1 Hz ... 20 kHz linear in Hz; log axis: 20 Hz (lowest log frequency) ... 20 kHz log
+    if (m_logFreqAxis)
+        m_freqRangeSlider.setNormalisableRange(juce::NormalisableRange<double>(g_logAxisMinFreq, 20000.0,
+            [](double start, double end, double t) { return start*std::pow(end/start, t); },
+            [](double start, double end, double v) { return std::log(v/start)/std::log(end/start); }));
+    else
+        m_freqRangeSlider.setNormalisableRange(juce::NormalisableRange<double>(1.0, 20000.0));
+    if (m_freqRangeBinding != nullptr)
+        m_freqRangeBinding->update();
+    m_freqRangeSlider.repaint();
+}
+
+juce::NormalisableRange<double> JadeSpectrogramGUI::makeAveragingRange()
+{
+    // lowest 2 % of the slider: off; above: 2 hops (alpha = 0.5) ... 2000 ms, logarithmic.
+    // The hop depends on sample rate, FFT size and overlap, so the scale follows m_currentHop.
+    auto hopMs = [this]() { return 1000.0*static_cast<double>(m_currentHop)/static_cast<double>(m_processor.m_algo.getSamplerate()); };
+    const double offPart = 0.02;
+    return juce::NormalisableRange<double>(0.0, 2000.0,
+        [hopMs, offPart](double, double end, double p)
+        {
+            if (p < offPart)
+                return 0.0;
+            const double tauMin = std::min(2.0*hopMs(), 0.5*end);
+            return tauMin*std::pow(end/tauMin, (p - offPart)/(1.0 - offPart));
+        },
+        [hopMs, offPart](double, double end, double v)
+        {
+            const double hop = hopMs(), tauMin = std::min(2.0*hop, 0.5*end);
+            if (v <= hop)
+                return 0.0; // off (alpha = 1)
+            if (v <= tauMin)
+                return offPart;
+            return offPart + (1.0 - offPart)*std::log(v/tauMin)/std::log(end/tauMin);
+        },
+        [](double, double, double v) { return v; });
 }
 
 void JadeSpectrogramGUI::freqAxisClicked()
