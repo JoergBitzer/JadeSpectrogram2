@@ -164,7 +164,8 @@ final layout below is the target.
 5. ~~**1.10.0 Overlap 50 / 75 %**~~ -- done (the hop travels with the slices in `SliceInfo`;
    fixed the block order of the 75 % mode in `SpectrumAnalyzer`). (item 9): `SpectrumAnalyzer` supports 75 % already. Needed
    for 8192-point FFTs, otherwise the time axis jumps too much. Parameter, saved.
-6. **1.11.0 Time window 10 s and time zoom** (item 11): internal memory 10 s, horizontal
+6. ~~**1.11.0 Time window 10 s and time zoom**~~ -- done (TimeStart/TimeEnd as fractions of the
+   window, minimum 2 %). (item 11): internal memory 10 s, horizontal
    range slider above the display, time labels below follow the zoom (decision 8: relative
    time in Scroll mode, sweep time in Fix mode).
 7. **1.12.0 Keyboard overlay** (item 8): switchable, small transparent overlay on the left

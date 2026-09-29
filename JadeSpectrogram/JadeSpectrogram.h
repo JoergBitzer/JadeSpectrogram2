@@ -68,6 +68,8 @@ namespace JadeParamID
     inline const juce::String fixDisplay {"FixDisplay"};
     inline const juce::String averaging {"Averaging"}; // time constant in ms, 0 = off
     inline const juce::String overlap {"Overlap"}; // 0: 50 %, 1: 75 %
+    inline const juce::String timeStart {"TimeStart"}; // visible part of the time window,
+    inline const juce::String timeEnd {"TimeEnd"};     // fractions 0 ... 1 (1 = right edge)
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -217,8 +219,12 @@ private:
     // range sliders (V2 decision 7): frequency range left, colour range right
     RangeSlider m_freqRangeSlider {true};
     RangeSlider m_colorRangeSlider {true};
+    RangeSlider m_timeRangeSlider {false}; // time zoom in the strip above the display
     std::unique_ptr<RangeParameterBinding> m_freqRangeBinding;
     std::unique_ptr<RangeParameterBinding> m_colorRangeBinding;
+    std::unique_ptr<RangeParameterBinding> m_timeRangeBinding;
+    float m_timeStart = 0.f, m_timeEnd = 1.f; // visible fraction of the time window (from the parameters)
+    void updateTimeRange();
     float m_lastColorMin = 0.f, m_lastColorMax = 0.f; // palette range of the current image
     void setFloatParameter(const juce::String& id, float plainValue);
 

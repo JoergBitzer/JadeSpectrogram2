@@ -306,6 +306,12 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
+    const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
+        .withStringFromValueFunction([](float v, int) { return String(juce::roundToInt(100.f*v)) + " %"; });
+    paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::timeStart, "Time zoom start",
+        NormalisableRange<float>(0.f, 1.f), 0.f, fraction));
+    paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::timeEnd, "Time zoom end",
+        NormalisableRange<float>(0.f, 1.f), 1.f, fraction));
     // averaging time constant: 0 ... 2000 ms, centre of the slider at 200 ms; 0 = off
     NormalisableRange<float> avgRange(0.f, 2000.f);
     avgRange.setSkewForCentre(200.f);
@@ -381,7 +387,11 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     addAndMakeVisible(m_colorRangeSlider);
     // the selected range in light red between the red thumbs (track and background are both
     // grey in the Jade look and feel, which would hide the range)
-    for (auto* rs : {&m_freqRangeSlider, &m_colorRangeSlider})
+    m_timeRangeSlider.setRange(0.0, 1.0);
+    m_timeRangeSlider.setTooltip("Time zoom: drag a thumb, or drag between the thumbs to move the visible part");
+    m_timeRangeBinding = std::make_unique<RangeParameterBinding>(m_timeRangeSlider, m_apvts, JadeParamID::timeStart, JadeParamID::timeEnd);
+    addAndMakeVisible(m_timeRangeSlider);
+    for (auto* rs : {&m_freqRangeSlider, &m_colorRangeSlider, &m_timeRangeSlider})
         rs->setColour(juce::Slider::trackColourId, JadeLightRed1);
 
     // pause bars while running (click pauses), play triangle while paused (click continues);
@@ -497,10 +507,16 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     const float displayH = static_cast<float>(display.getHeight());
 
     int TextHeight = 20;
-    if (m_axisMap != AxisMap::Bins) // the image covers exactly the displayed range
+    // time zoom: image columns m_timeStart*W ... m_timeEnd*W fill the display width
+    const float colStart = m_timeStart*static_cast<float>(m_internalWidth);
+    const float sx = static_cast<float>(displayW)/((m_timeEnd - m_timeStart)*static_cast<float>(m_internalWidth));
+    if (m_axisMap != AxisMap::Bins) // the image covers exactly the displayed frequency range
     {
-        g.drawImage(m_internalImg, wStartPic, top, displayW, display.getHeight(),
-                    0,0,static_cast<int>(m_internalWidth),static_cast<int>(m_imageRows));
+        const float sy = displayH/static_cast<float>(m_imageRows);
+        juce::Graphics::ScopedSaveState state(g);
+        g.reduceClipRegion(display);
+        g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
+                                                  .translated(static_cast<float>(wStartPic) - colStart*sx, static_cast<float>(top)));
     }
     else
     {
@@ -510,12 +526,11 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
         const float binWidth = 0.5f*fs/static_cast<float>(m_internalHeight-1);
         const float rowsShown = (m_maxDisplayFreq - m_minDisplayFreq)/binWidth; // image rows between min and max
         const float rowTop = static_cast<float>(m_internalHeight) - 0.5f - m_maxDisplayFreq/binWidth; // image coordinate of max
-        const float sx = static_cast<float>(displayW)/static_cast<float>(m_internalWidth);
         const float sy = displayH/rowsShown;
         juce::Graphics::ScopedSaveState state(g);
         g.reduceClipRegion(display);
         g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
-                                                  .translated(static_cast<float>(wStartPic), static_cast<float>(top) - rowTop*sy));
+                                                  .translated(static_cast<float>(wStartPic) - colStart*sx, static_cast<float>(top) - rowTop*sy));
     }
     drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), top, displayH,
                       m_scaleFactor*static_cast<float>(TextHeight));
@@ -587,6 +602,7 @@ void JadeSpectrogramGUI::resized()
     // range sliders along the full display height
     m_freqRangeSlider.setBounds(sc(g_SliderMinFreq_x), top, sc(g_SliderWidth), display.getHeight());
     m_colorRangeSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top, sc(g_SliderWidth), display.getHeight());
+    m_timeRangeSlider.setBounds(display.getX(), 0, display.getWidth(), top); // zoom strip, as wide as the display
 
     // bottom row, left to right below the display: pause, run/fix, window, FFT size
     // (overlap and averaging follow in later versions); colour map below the colour bar
@@ -616,6 +632,8 @@ void JadeSpectrogramGUI::timerCallback()
     // parameters -> range sliders (restored project, preset, automation)
     m_freqRangeBinding->update();
     m_colorRangeBinding->update();
+    m_timeRangeBinding->update();
+    updateTimeRange();
     const float minValColor = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
     const float maxValColor = m_apvts.getRawParameterValue(paramDisplayMaxColor.ID)->load();
     if (!juce::approximatelyEqual(minValColor, m_lastColorMin) || !juce::approximatelyEqual(maxValColor, m_lastColorMax))
@@ -820,6 +838,22 @@ void JadeSpectrogramGUI::setDisplayMode(bool fixed)
     m_recomputeAll = true; // the columns are arranged differently in both modes
 }
 
+void JadeSpectrogramGUI::updateTimeRange()
+{
+    // visible fraction of the time window; at least 2 % (0.2 s of 10 s) so it cannot collapse
+    const float minWidth = 0.02f;
+    float s = juce::jlimit(0.f, 1.f, m_apvts.getRawParameterValue(JadeParamID::timeStart)->load());
+    float e = juce::jlimit(0.f, 1.f, m_apvts.getRawParameterValue(JadeParamID::timeEnd)->load());
+    if (e - s < minWidth)
+    {
+        if (s + minWidth <= 1.f) e = s + minWidth; else s = e - minWidth;
+        setFloatParameter(JadeParamID::timeStart, s);
+        setFloatParameter(JadeParamID::timeEnd, e);
+    }
+    m_timeStart = s;
+    m_timeEnd = e;
+}
+
 void JadeSpectrogramGUI::setFloatParameter(const juce::String& id, float plainValue)
 {
     if (auto* p = dynamic_cast<juce::RangedAudioParameter*>(m_apvts.getParameter(id)))
@@ -947,15 +981,16 @@ void JadeSpectrogramGUI::drawTimeAxis(juce::Graphics& g, juce::Rectangle<int> di
     const float span = timeSpan();
     if (!(span > 0.f))
         return;
-    const float tmin = m_isRunningDisplay ? 0.f : -span;
-    const float tmax = m_isRunningDisplay ? span : 0.f;
+    const float t0 = m_isRunningDisplay ? 0.f : -span; // time at the left edge of the whole window
+    const float tmin = t0 + m_timeStart*span;         // visible part (time zoom)
+    const float tmax = t0 + m_timeEnd*span;
     const float labelW = 44.f*m_scaleFactor;
     const int maxLabels = juce::jmax(2, static_cast<int>(static_cast<float>(display.getWidth())/(1.3f*labelW)));
     double step = 1.0;
     for (double st : {0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0})
     {
         step = st;
-        if (static_cast<int>(std::floor(double(span)/st)) + 1 <= maxLabels)
+        if (static_cast<int>(std::floor(double(tmax - tmin)/st)) + 1 <= maxLabels)
             break;
     }
     const int decimals = (step < 1.0) ? 1 : 0;
@@ -1194,7 +1229,9 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
         freqindex = std::min(freqindex, m_internalHeight-1);
 
         // recompute the time index from display index
-        size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * static_cast<size_t>(x-display.getX())/float(display.getWidth()) +0.5); // x inside (see if)
+        // image column under the pixel centre (the same mapping as in paint(), including the time zoom)
+        const float frac = m_timeStart + (m_timeEnd - m_timeStart)*(static_cast<float>(x - display.getX()) + 0.5f)/static_cast<float>(display.getWidth());
+        size_t timeindex = std::min(m_internalWidth-1, static_cast<size_t>(juce::jmax(0.f, frac*static_cast<float>(m_internalWidth))));
         float val = -100.f;
         size_t column = timeindex;
         if (m_isRunningDisplay)
