@@ -424,16 +424,23 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     syncFromParameters(); // lin/log and Run/Fix from the saved settings
     setFreqAxisButtonText();
     m_freqAxisButton.onClick = [this](){freqAxisClicked();};
-    // keyboard overlay button: a small keyboard (5 white, 3 black keys), highlighted while on
+    // keyboard overlay button: a piece of a real keyboard (white keys C D E F with dark lines between
+    // them, black keys C#, D# and a cut F# at the right edge, 60 % high). The white keys take the
+    // button's text colour: white when off, light red when on (button highlighted)
     m_keyboardButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
     {
-        r = r.withSizeKeepingCentre(r.getWidth()*1.4f, r.getHeight());
-        const float keyW = r.getWidth()/5.f;
+        r = r.withSizeKeepingCentre(r.getWidth()*1.35f, r.getHeight()*1.3f);
+        const float keyW = r.getWidth()/4.f;
         g.setColour(c);
-        for (int k = 0; k < 5; ++k)
-            g.drawRect(r.getX() + keyW*static_cast<float>(k), r.getY(), keyW, r.getHeight(), 1.f);
-        for (int k : {1, 2, 4}) // C#, D#, F#
-            g.fillRect(r.getX() + keyW*(static_cast<float>(k) - 0.3f), r.getY(), 0.6f*keyW, 0.6f*r.getHeight());
+        g.fillRect(r);
+        g.setColour(juce::Colours::black);
+        for (int k = 1; k < 4; ++k) // lines between the white keys
+            g.drawLine(r.getX() + keyW*static_cast<float>(k), r.getY(), r.getX() + keyW*static_cast<float>(k), r.getBottom(), 1.f);
+        g.drawRect(r, 1.f);
+        const float blackW = 0.58f*keyW, blackH = 0.6f*r.getHeight();
+        for (int k : {1, 2}) // C#, D#
+            g.fillRect(r.getX() + keyW*static_cast<float>(k) - 0.5f*blackW, r.getY(), blackW, blackH);
+        g.fillRect(r.getRight() - 0.5f*blackW, r.getY(), 0.5f*blackW, blackH); // F#, cut at the edge
     };
     m_keyboardButton.setTooltip("Keyboard overlay: semitone bands and note names over the spectrogram");
     m_keyboardButton.onClick = [this](){ setBoolParameter(JadeParamID::keyboardOverlay, !m_keyboardOverlay); syncFromParameters(); repaint(); };
