@@ -11,6 +11,7 @@
 #include "SpectrumAnalyzer.h"
 #include "TwoDimBlockFreeFiFo.h"
 #include "CColorpalette.h"
+#include "IconButton.h"
 #include "JadeLookAndFeel.h"
 
 class JadeSpectrogramAudioProcessor;
@@ -197,7 +198,7 @@ private:
     std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment> m_DisplayMaxColorAttachment;
 
     TextButton m_runModeButton;
-    TextButton m_pauseButton;
+    IconButton m_pauseButton; // pause / play symbol
     void pauseClicked();
     void changeFFTSize();
     void mouseMove(const MouseEvent &event) override;
@@ -229,10 +230,13 @@ private:
     void updateFrequencyMapping(); // rebuilds the mapping (and resizes the image) if needed
     float rowValue(const std::vector<float>& column, size_t row) const;
     void updateDisplayRange(); // frequency sliders -> m_minDisplayFreq, m_maxDisplayFreq
+    juce::Rectangle<int> displayArea() const; // the analysis display in component coordinates
     float displayHeight() const; // height of the analysis display in pixels
     float frequencyToY(float freq, float displayH) const; // 0 = top of the display
     float yToFrequency(float y, float displayH) const;
-    void drawFrequencyAxis(juce::Graphics& g, int x, float displayH, float textH) const;
+    void drawFrequencyAxis(juce::Graphics& g, int x, int top, float displayH, float textH) const;
+    float timeSpan() const; // seconds covered by the display memory
+    void drawTimeAxis(juce::Graphics& g, juce::Rectangle<int> display, float textH) const;
     bool m_mouseInDisplay = false; // crosshair is drawn while the mouse is over the display
     void runClicked();
     bool m_isPaused;
@@ -245,6 +249,6 @@ private:
     ComboBox m_fftSizeCombo;
     bool m_hideFFTSizeCombobox;
     //void changeFFTSize();
-    Label m_FreqLabel;
+    juce::String m_readoutText; // frequency | note | level at the mouse (shown by the crosshair)
 
 };

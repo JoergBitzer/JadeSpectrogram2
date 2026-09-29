@@ -6,9 +6,9 @@ const bool g_forcePowerOf2(true); // should be true for FFT Processing
 
 // -------------- GUI -----------------
 // global GUI setting for JadeSpectrogram
-const int g_minGuiSize_x(800);
+const int g_minGuiSize_x(840);
 const int g_maxGuiSize_x(1400);
-const int g_minGuiSize_y(550);
+const int g_minGuiSize_y(580);
 const float g_guiratio = float(g_minGuiSize_y)/g_minGuiSize_x;
 
 // ---------- presethandler ----------
@@ -30,8 +30,8 @@ const float g_wheelstokeyboardratio(0.1f);
 const int g_spec_x(5);
 const int g_spec_y(35);
 
-const int g_spec_width(790);
-const int g_spec_height(510);
+const int g_spec_width(830);
+const int g_spec_height(540);
 
 // Slider
 const int g_FreqMeter(40);
@@ -39,6 +39,11 @@ const int g_SliderWidth(20);
 const int g_SliderHeight(200);
 
 const int g_menuHeight(20);
+// V2 layout, top to bottom: zoom strip, display, time axis labels, bottom row (g_menuHeight)
+const int g_zoomStripHeight(14);
+const int g_timeAxisHeight(16);
+const int g_displayGap(8); // between display and colour bar
+const int g_PauseButtonWidth(24);
 
 // PosFreqSlider
 const int g_SliderMinFreq_x(2);

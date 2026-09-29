@@ -329,7 +329,26 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 	addAndMakeVisible(m_DisplayMaxColorSlider);
 	m_DisplayMaxColorSlider.onValueChange = [this]() { m_recomputeAll = true; if (somethingChanged != nullptr) somethingChanged(); };
 
-    m_pauseButton.setButtonText("Pause");
+    // pause bars while running (click pauses), play triangle while paused (click continues);
+    // highlighted while paused
+    m_pauseButton.drawIcon = [this](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        g.setColour(c);
+        if (m_isPaused)
+        {
+            juce::Path play;
+            play.addTriangle(r.getX() + 0.15f*r.getWidth(), r.getY(), r.getX() + 0.15f*r.getWidth(), r.getBottom(),
+                             r.getRight() - 0.05f*r.getWidth(), r.getCentreY());
+            g.fillPath(play);
+        }
+        else
+        {
+            const float barW = 0.3f*r.getWidth();
+            g.fillRect(r.getX() + 0.08f*r.getWidth(), r.getY(), barW, r.getHeight());
+            g.fillRect(r.getRight() - 0.08f*r.getWidth() - barW, r.getY(), barW, r.getHeight());
+        }
+    };
+    m_pauseButton.setTooltip("Pause / continue the analysis");
     m_pauseButton.setToggleState(false,NotificationType::dontSendNotification);
     m_pauseButton.onClick = [this](){pauseClicked();};
     addAndMakeVisible(m_pauseButton);
@@ -380,12 +399,6 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     int fftSizeIndex = static_cast<int>(std::log2(static_cast<double>(m_processor.m_algo.getFFTSize()))) - 9;
     m_fftSizeCombo.setSelectedItemIndex(juce::jlimit(0, 4, fftSizeIndex),NotificationType::dontSendNotification);
     addAndMakeVisible(m_fftSizeCombo);
-    m_FreqLabel.setText("Analysis",juce::NotificationType::dontSendNotification);
-    m_FreqLabel.setJustificationType(juce::Justification::centred);
-    m_FreqLabel.setColour(Label::ColourIds::outlineColourId,JadeTeal);
-    m_FreqLabel.setColour(Label::ColourIds::textColourId,juce::Colours::white);
-    m_FreqLabel.setColour(Label::ColourIds::backgroundColourId,JadeTeal);
-    addAndMakeVisible(m_FreqLabel);
 
     startTimer(40) ;
 }
@@ -396,7 +409,6 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId).darker(0.2f));
 
     int w = getWidth();
-    int h = getHeight();
 
     float fs = m_processor.m_algo.getSamplerate();
     
@@ -404,15 +416,16 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     // the image (updateDisplayRange), so image, axis and readout always belong together
 
 
-    int wStartPic =static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter));
+    const auto display = displayArea();
+    const int wStartPic = display.getX();
+    const int top = display.getY();
+    const int displayW = display.getWidth();
+    const float displayH = static_cast<float>(display.getHeight());
 
     int TextHeight = 20;
-    int nrOfYTicks = 11;
-    float RangePerTick = 0.f;
-    const float displayH = displayHeight();
     if (m_axisMap != AxisMap::Bins) // the image covers exactly the displayed range
     {
-        g.drawImage(m_internalImg,wStartPic,0,static_cast<int>(0.8f*w),int(float(h)-m_scaleFactor*g_menuHeight+0.5),
+        g.drawImage(m_internalImg, wStartPic, top, displayW, display.getHeight(),
                     0,0,static_cast<int>(m_internalWidth),static_cast<int>(m_imageRows));
     }
     else
@@ -420,22 +433,22 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     // Linear axis: image row H-1-k shows bin k (frequency k*binWidth); the centre of that row has to
     // land exactly on the axis position of k*binWidth. A transform instead of an integer source
     // rectangle, so neither the half-row offset nor rounding to whole rows shifts the bins.
-        const int displayW = static_cast<int>(0.8f*w);
         const float binWidth = 0.5f*fs/static_cast<float>(m_internalHeight-1);
         const float rowsShown = (m_maxDisplayFreq - m_minDisplayFreq)/binWidth; // image rows between min and max
         const float rowTop = static_cast<float>(m_internalHeight) - 0.5f - m_maxDisplayFreq/binWidth; // image coordinate of max
         const float sx = static_cast<float>(displayW)/static_cast<float>(m_internalWidth);
         const float sy = displayH/rowsShown;
         juce::Graphics::ScopedSaveState state(g);
-        g.reduceClipRegion(wStartPic, 0, displayW, static_cast<int>(displayH));
+        g.reduceClipRegion(display);
         g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
-                                                  .translated(static_cast<float>(wStartPic), -rowTop*sy));
+                                                  .translated(static_cast<float>(wStartPic), static_cast<float>(top) - rowTop*sy));
     }
-    drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), displayH,
+    drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), top, displayH,
                       m_scaleFactor*static_cast<float>(TextHeight));
+    drawTimeAxis(g, display, m_scaleFactor*static_cast<float>(TextHeight));
 
-    // Plot Colorbar
-    int cbHeight = static_cast<int>(h-m_scaleFactor*g_menuHeight);
+    // Plot Colorbar (same height as the display)
+    int cbHeight = display.getHeight();
     Image colorbar(Image::RGB,1,cbHeight,true);
     for (int kk = 0; kk < cbHeight; kk++)
     {   
@@ -443,27 +456,28 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
         juce::uint32 color = m_colorpalette.getRGBColor(val) | 0xFF000000u; // kein alpha blending
         colorbar.setPixelAt(0,cbHeight-1-kk,juce::Colour(color));
     }
-    g.drawImage(colorbar,w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)),0,static_cast<int>(m_scaleFactor*g_colorbar_width),static_cast<int>(h-m_scaleFactor*g_menuHeight),
+    g.drawImage(colorbar,w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)),top,static_cast<int>(m_scaleFactor*g_colorbar_width),cbHeight,
                 0,0,1,cbHeight);
 
     // draw scale
     // Add colorbar scale
-    nrOfYTicks = 11;
-    RangePerTick = float(g_maxColorVal - g_minColorVal)/(nrOfYTicks-1);
+    const int nrOfYTicks = 11;
+    const float RangePerTick = float(g_maxColorVal - g_minColorVal)/(nrOfYTicks-1);
+    const float bottom = static_cast<float>(display.getBottom());
     for (auto kk = 0; kk < nrOfYTicks; ++kk)
     {
         float newExaktFreq = int((g_minColorVal + RangePerTick*kk)*0.1f)*10.f;
         String OutText;
         OutText += String(newExaktFreq);
 
-        int ydelta = (h-m_scaleFactor*g_menuHeight)* (newExaktFreq-g_minColorVal)/(g_maxColorVal - g_minColorVal);
-        int x = w - (g_FreqMeter + g_SliderWidth + g_SliderMaxFreq_x) *m_scaleFactor;
+        float ydelta = displayH*(newExaktFreq-g_minColorVal)/(g_maxColorVal - g_minColorVal);
+        int x = static_cast<int>(static_cast<float>(w) - (g_FreqMeter + g_SliderWidth + g_SliderMaxFreq_x)*m_scaleFactor);
         int y ;
         if (kk < nrOfYTicks-1)
-            y = h-m_scaleFactor*g_menuHeight-0.5*TextHeight*m_scaleFactor - ydelta;
+            y = static_cast<int>(bottom - 0.5f*static_cast<float>(TextHeight)*m_scaleFactor - ydelta);
         else
         {
-            y = h-m_scaleFactor*g_menuHeight - ydelta;
+            y = static_cast<int>(bottom - ydelta);
         }
         
         g.drawText(OutText,x,y,static_cast<int>(g_FreqMeter*m_scaleFactor),static_cast<int>(m_scaleFactor*TextHeight),
@@ -472,8 +486,7 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     
     m_newDataAvailable = 0;
 
-    drawCrosshair(g, juce::Rectangle<int>(wStartPic, 0, static_cast<int>(0.8f*w),
-                                          int(float(h)-m_scaleFactor*g_menuHeight+0.5)));
+    drawCrosshair(g, display);
 
     g.setColour (JadeTeal);
     g.setFont (9.0f*m_scaleFactor);
@@ -493,38 +506,29 @@ void JadeSpectrogramGUI::resized()
 	m_scaleFactor = float(width)/g_minGuiSize_x;
 
     // use the given canvas in r
-    m_DisplayMaxFreqSlider.setBounds(static_cast<int>(m_scaleFactor*g_SliderMaxFreq_x),static_cast<int>(m_scaleFactor*g_SliderMaxFreq_y),
-            static_cast<int>(m_scaleFactor*g_SliderWidth),static_cast<int>(m_scaleFactor*g_SliderHeight));
-    m_DisplayMinFreqSlider.setBounds(static_cast<int>(m_scaleFactor*g_SliderMinFreq_x),static_cast<int>(m_scaleFactor*g_SliderMinFreq_y),
-            static_cast<int>(m_scaleFactor*g_SliderWidth),static_cast<int>(m_scaleFactor*g_SliderHeight));
+    const auto display = displayArea();
+    const float sf = m_scaleFactor;
+    auto sc = [sf](float v) { return static_cast<int>(sf*v); };
+    const int top = display.getY();
+    m_DisplayMaxFreqSlider.setBounds(sc(g_SliderMaxFreq_x), top + sc(g_SliderMaxFreq_y), sc(g_SliderWidth), sc(g_SliderHeight));
+    m_DisplayMinFreqSlider.setBounds(sc(g_SliderMinFreq_x), top + sc(g_SliderMinFreq_y), sc(g_SliderWidth), sc(g_SliderHeight));
+    m_DisplayMaxColorSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top + sc(g_SliderMaxColor_y), sc(g_SliderWidth), sc(g_SliderHeight));
+    m_DisplayMinColorSlider.setBounds(width - sc(g_SliderWidth + g_SliderMinFreq_x), top + sc(g_SliderMinColor_y), sc(g_SliderWidth), sc(g_SliderHeight));
 
-    m_DisplayMaxColorSlider.setBounds(static_cast<int>(m_scaleFactor*g_SliderMaxColor_x),static_cast<int>(m_scaleFactor*g_SliderMaxColor_y),
-            static_cast<int>(m_scaleFactor*g_SliderWidth),static_cast<int>(m_scaleFactor*g_SliderHeight));
-    m_DisplayMinColorSlider.setBounds(static_cast<int>(m_scaleFactor*g_SliderMinColor_x),static_cast<int>(m_scaleFactor*g_SliderMinColor_y),
-            static_cast<int>(m_scaleFactor*g_SliderWidth),static_cast<int>(m_scaleFactor*g_SliderHeight));
+    // bottom row, left to right below the display: pause, run/fix, window, FFT size
+    // (overlap and averaging follow in later versions); colour map below the colour bar
+    const int rowY = static_cast<int>(static_cast<float>(h) - sf*g_menuHeight + 0.5f);
+    const int rowH = sc(g_ButtonHeight);
+    int x = display.getX();
+    m_pauseButton.setBounds(x, rowY, sc(g_PauseButtonWidth), rowH);
+    x += sc(g_PauseButtonWidth + 6);
+    m_runModeButton.setBounds(x, rowY, sc(40), rowH);
+    x += sc(40 + 12);
+    m_windowFktCombo.setBounds(x, rowY, sc(110), rowH);
+    x += sc(110 + 8);
+    m_fftSizeCombo.setBounds(x, rowY, sc(70), rowH);
 
-    m_pauseButton.setBounds(static_cast<int>(m_scaleFactor*g_PauseButton_x),  static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
-                    static_cast<int>(m_scaleFactor*g_ButtonWidth),static_cast<int>(m_scaleFactor*g_ButtonHeight));
-
-    int w = getWidth();
-    int x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.8*w - m_scaleFactor*g_ButtonWidth);
-
-    m_runModeButton.setBounds(x, static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
-                    static_cast<int>(m_scaleFactor*g_ButtonWidth),static_cast<int>(m_scaleFactor*g_ButtonHeight));
-
-    m_colorScheme.setBounds(w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)), static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
-                    static_cast<int>(m_scaleFactor*g_colorbar_width), static_cast<int>(m_scaleFactor*g_ButtonHeight));
-
-    int LabelWidth = 140;
-    x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.4*w - m_scaleFactor*0.5*LabelWidth);
-    m_FreqLabel.setBounds(x , static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),static_cast<int>(m_scaleFactor*LabelWidth),static_cast<int>(m_scaleFactor*g_ButtonHeight));                    
-
-    x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.2*w - m_scaleFactor*0.5*100);
-    m_windowFktCombo.setBounds(x, static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),static_cast<int>(m_scaleFactor*100),static_cast<int>(m_scaleFactor*g_ButtonHeight));
-
-    x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.6*w - m_scaleFactor*0.5*100);
-    m_fftSizeCombo.setBounds(x, static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),static_cast<int>(m_scaleFactor*100),static_cast<int>(m_scaleFactor*g_ButtonHeight));
-            
+    m_colorScheme.setBounds(width - sc(g_colorbar_width + g_FreqMeter + g_SliderWidth), rowY, sc(g_colorbar_width), rowH);
 }
 
 void JadeSpectrogramGUI::timerCallback()
@@ -789,10 +793,63 @@ void JadeSpectrogramGUI::updateDisplayRange()
     }
 }
 
+juce::Rectangle<int> JadeSpectrogramGUI::displayArea() const
+{
+    // left: frequency slider and labels; right: gap, colour bar, colour labels, colour slider;
+    // top: zoom strip; bottom: time axis labels and the bottom row
+    const float s = m_scaleFactor;
+    const int x = static_cast<int>(s*(g_SliderWidth + g_FreqMeter));
+    const int right = getWidth() - static_cast<int>(s*(g_colorbar_width + g_FreqMeter + g_SliderWidth + g_displayGap));
+    const int top = static_cast<int>(s*g_zoomStripHeight + 0.5f);
+    const int bottom = static_cast<int>(float(getHeight()) - s*(g_menuHeight + g_timeAxisHeight) + 0.5f);
+    return {x, top, juce::jmax(1, right - x), juce::jmax(1, bottom - top)};
+}
+
 float JadeSpectrogramGUI::displayHeight() const
 {
-    // whole pixels, rounded as in paint() (image, clip, axis and readout use the same height)
-    return static_cast<float>(int(float(getHeight())-m_scaleFactor*g_menuHeight+0.5f));
+    return static_cast<float>(displayArea().getHeight());
+}
+
+float JadeSpectrogramGUI::timeSpan() const
+{
+    // one display column per hop; hop = FFT size / 2 = bins - 1 (50 % overlap)
+    const float fs = m_processor.m_algo.getSamplerate();
+    return static_cast<float>(m_internalWidth)*static_cast<float>(m_internalHeight-1)/fs;
+}
+
+void JadeSpectrogramGUI::drawTimeAxis(juce::Graphics& g, juce::Rectangle<int> display, float textH) const
+{
+    // Scroll mode: time relative to now (-span ... 0 s at the right edge).
+    // Fix mode: sweep time (0 s at the left edge ... span), the running cursor shows "now".
+    const float span = timeSpan();
+    if (!(span > 0.f))
+        return;
+    const float tmin = m_isRunningDisplay ? 0.f : -span;
+    const float tmax = m_isRunningDisplay ? span : 0.f;
+    const float labelW = 44.f*m_scaleFactor;
+    const int maxLabels = juce::jmax(2, static_cast<int>(static_cast<float>(display.getWidth())/(1.3f*labelW)));
+    double step = 1.0;
+    for (double st : {0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0})
+    {
+        step = st;
+        if (static_cast<int>(std::floor(double(span)/st)) + 1 <= maxLabels)
+            break;
+    }
+    const int decimals = (step < 1.0) ? 1 : 0;
+    const float y0 = static_cast<float>(display.getBottom());
+    const float tick = 4.f*m_scaleFactor;
+    g.setFont(0.7f*textH);
+    for (double t = std::ceil(tmin/step - 1e-6)*step; t <= double(tmax) + 1e-6; t += step)
+    {
+        const float x = static_cast<float>(display.getX()) + static_cast<float>(display.getWidth())*(static_cast<float>(t) - tmin)/(tmax - tmin);
+        g.drawLine(x, y0, x, y0 + tick, 1.f);
+        const double shown = (std::abs(t) < 1e-9) ? 0.0 : t; // no "-0 s"
+        const String text = String(shown, decimals) + " s";
+        const float tx = juce::jlimit(static_cast<float>(display.getX()) - 0.5f*labelW, static_cast<float>(display.getRight()) - 0.5f*labelW,
+                                      x - 0.5f*labelW);
+        g.drawText(text, static_cast<int>(tx), static_cast<int>(y0 + tick), static_cast<int>(labelW),
+                   static_cast<int>(g_timeAxisHeight*m_scaleFactor - tick), juce::Justification::centred, false);
+    }
 }
 
 float JadeSpectrogramGUI::frequencyToY(float freq, float displayH) const
@@ -814,7 +871,7 @@ float JadeSpectrogramGUI::yToFrequency(float y, float displayH) const
     return fmin + yrel*(fmax - fmin);
 }
 
-void JadeSpectrogramGUI::drawFrequencyAxis(juce::Graphics& g, int x, float displayH, float textH) const
+void JadeSpectrogramGUI::drawFrequencyAxis(juce::Graphics& g, int x, int top, float displayH, float textH) const
 {
     const float fmin = (m_axisMap == AxisMap::Bins) ? m_minDisplayFreq : m_mapMinFreq;
     const float fmax = (m_axisMap == AxisMap::Bins) ? m_maxDisplayFreq : m_mapMaxFreq;
@@ -865,7 +922,7 @@ void JadeSpectrogramGUI::drawFrequencyAxis(juce::Graphics& g, int x, float displ
         }
         else
             text = String(juce::roundToInt(f));
-        const float y = juce::jlimit(0.f, displayH-textH, frequencyToY(static_cast<float>(f), displayH) - 0.5f*textH);
+        const float y = static_cast<float>(top) + juce::jlimit(0.f, displayH-textH, frequencyToY(static_cast<float>(f), displayH) - 0.5f*textH);
         g.drawText(text, x, static_cast<int>(y), static_cast<int>(g_FreqMeter*m_scaleFactor), static_cast<int>(textH),
                    juce::Justification::centred, true);
     }
@@ -980,7 +1037,7 @@ void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> d
 
     // readout (the same text as below the display) next to the cursor,
     // on the other side of the cursor near the right and bottom edges
-    const juce::String text = m_FreqLabel.getText();
+    const juce::String text = m_readoutText;
     const juce::Font font(juce::FontOptions(13.0f*m_scaleFactor));
     const int textW = juce::GlyphArrangement::getStringWidthInt(font, text) + static_cast<int>(10.0f*m_scaleFactor);
     const int textH = static_cast<int>(18.0f*m_scaleFactor);
@@ -1000,25 +1057,21 @@ void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> d
 
 bool JadeSpectrogramGUI::setLabelText(int x, int y)
 {
-   
-    int w = getWidth();
-    int h = getHeight();
-    int wstart = m_scaleFactor*(g_FreqMeter+g_SliderMaxFreq_x+g_SliderWidth);
-    if (y >= 0 && y < h-m_scaleFactor*g_ButtonHeight && x > wstart && x < wstart + 0.8*w)
+    const auto display = displayArea();
+    if (display.contains(x, y))
     {
-        
-        const float displayH = displayHeight();
-        const float freq = yToFrequency(float(y), displayH);
+        const float displayH = static_cast<float>(display.getHeight());
+        const float yd = static_cast<float>(y - display.getY()); // 0 = top of the display
+        const float freq = yToFrequency(yd, displayH);
         // mapped image (LinearMax, Log): the readout shows the value of the image row, i.e. what is drawn
-        const size_t imageRow = std::min(m_imageRows-1, static_cast<size_t>(juce::jmax(0.f, (1.f - (float(y)+0.5f)/displayH)*float(m_imageRows))));
+        const size_t imageRow = std::min(m_imageRows-1, static_cast<size_t>(juce::jmax(0.f, (1.f - (yd+0.5f)/displayH)*float(m_imageRows))));
         // recompute freq to freq index in the internal memory
         float fshalf = 0.5f*m_processor.m_algo.getSamplerate();
         size_t freqindex  = static_cast<size_t> ((m_internalHeight-1) * freq / fshalf + 0.5f);
         freqindex = std::min(freqindex, m_internalHeight-1);
 
         // recompute the time index from display index
-        float maxw = 0.8*w;
-        size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * static_cast<size_t>(x-wstart)/maxw +0.5); // x > wstart (see if)
+        size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * static_cast<size_t>(x-display.getX())/float(display.getWidth()) +0.5); // x inside (see if)
         float val = -100.f;
         size_t column = timeindex;
         if (m_isRunningDisplay)
@@ -1042,7 +1095,7 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
         int midinotenumber =  int(log(freq/440.0)/log(2) * 12 + 69 + 0.5);
         String midiNoteName = msg.getMidiNoteName(midinotenumber,true,true,4);
 
-        m_FreqLabel.setText(String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB") ,juce::NotificationType::dontSendNotification);
+        m_readoutText = String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB");
         return true;
     }
     return false;

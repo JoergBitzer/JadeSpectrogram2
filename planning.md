@@ -148,9 +148,9 @@ final layout below is the target.
 
 ## Steps (one branch and one minor version each)
 
-1. **1.6.0 Layout**: new base size, time axis row with labels in seconds (for the current
-   8 s), empty zoom strip, Pause as icon button, readout label removed, title bar prepared
-   for the controls (Lin/Log already there).
+1. ~~**1.6.0 Layout**~~ -- done: base size 840 x 580, time axis labels (relative time in
+   Scroll mode, sweep time in Fix mode), empty zoom strip, Pause as icon button, readout
+   label removed, bottom row left to right below the display.
 2. **1.7.0 Save all settings** (decision 9) for the existing controls: FFT size, window,
    colormap, lin/log, Run/Fix. The following steps add their parameters to it.
 3. **1.8.0 Range sliders for frequency and colour** (decision 7, vertical) instead of the
