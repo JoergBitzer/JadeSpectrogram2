@@ -1,7 +1,7 @@
 # JadeSpectrogram2 – planning
 
 Ideas for improving the plugin, collected from a code review (September 2026, v1.2.4;
-updated for v1.3.0).
+updated for v1.5.2). The agreed plan for version 2.0 is at the end of this file.
 Items marked **bug** are verified in the code; the rest are proposals. Within each section
 the most useful items come first.
 
@@ -12,19 +12,11 @@ case), the default colormap was set in three different ways (now Plasma everywhe
 mouse readout could index past the spectrum at fs/2, and the README claimed the JUCE FFT
 (the plugin uses the internal FFT from `TGMStaticLib`).
 
-## 2. Real-time safety (remaining items)
+## 2. Real-time safety
 
 Done: lock-free SPSC FIFO (v1.2.2), FFT size/window switch without lock or allocation
-(v1.2.3), latency reported to the host (v1.2.4).
-
-- Make `m_PauseMode` and `m_mixMode` `std::atomic` (GUI writes, audio thread reads).
-- `m_fs` is written in `prepareToPlay` and read by the GUI: make it atomic, or send the
-  sample rate together with the slices, as is already done for the slice size.
-- `SynchronBlockProcessor` uses `MidiBuffer::addEvents`, which can allocate when MIDI
-  arrives. The spectrogram doesn't need MIDI: skip the MIDI handling, or reserve the buffer.
-- Remove dead synchronisation: the local `CriticalSection crit` in `paint()`/`resized()`
-  (it locks a new object every call, so it protects nothing), the unused
-  `CriticalSection m_protect` in the processor and in `SynchronBlockProcessor`.
+(v1.2.3), latency reported to the host (v1.2.4), atomic GUI flags, no dead locks and a
+reserved MIDI buffer (v1.3.3).
 
 ## 3. Zero latency instead of reported latency
 
@@ -88,25 +80,121 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
 
 ## Suggested order
 
-1. Remaining real-time items (section 2) and the tests/CI (section 6).
-2. Log frequency axis, overlap selection, saving the GUI settings.
-3. Larger features: stereo views, multi-resolution, export.
+See "Version 2.0" below. Ideas from sections 4-6 that are not part of it (zero padding,
+multi-resolution, stereo views, spectrum slice, calibration, faster drawing, tests in
+`tester/`) stay candidates for later versions.
 
-## next steps on a finer scale
-1. Remaining real-time items (section 2)
-2. ~~log frequency axis with a small button to switch between lin/log~~ -- done in 1.5.0 (lower limit at least 20 Hz in log mode).
-3. ~~**Crosshair / cursor** that shows frequency, note and level directly at the mouse~~ -- done in 1.4.0.
-5. - **Smoothing / averaging** along time (exponential, tau as smoothing parameter should be a slider, implemented as a simple first order iir filter), off should be most left position of the slider (when tau is below one block size and the alpha coefficient would be 1.f)
-6. ~~`TGMStaticLib` compiles its own copy of the JUCE modules~~ -- done in 1.3.4: the plugin
-  compiles only `TGMStaticLib/FFT.cpp` (no JUCE dependency), the library is not built.
-7. ~~Reduce warnings~~ -- done in 1.3.5: no warnings left in the plugin code (GCC, JUCE recommended warning flags).
-8. add a small transparent overlay (button to switch on/off, draw little 1/8 note as the button icon) that shows a musical keyboard (white and black stripes) and the note names for the frequencies on the left side of the spectrogram.
-9. add a switch for 50 and 75% overlap (the `SpectrumAnalyzer` supports 75% already, but the plugin always uses 50%). I think this is necessary for 8192-point FFTs, otherwise the time axis jumps too much. The overlap should be a parameter, so it can be saved in the plugin state.
-10. get bpm from the host and display it, and show a vertical line at every beat (or every 1/2, 1/4, 1/8 note) in the spectrogram. The line should be drawn on top of the spectrogram, so it is visible even if the spectrum is bright there. The BPM resolution (1 Beat, 1/2, 1/4 or 1/8) should be a parameter (the listbox only visible when the overlay is on and with musical notes as symbols), so it can be saved in the plugin state. This overlay should be switchable on/off (I have no idea for a good icon at the moment), and the BPM should be updated when the host changes it (e.g. when the transport is started or stopped). 
-11. increase the internal time window to 10s and make the time axis zoomable. The x-axis labels are below and above the figure and the zoom sliders are above the figure. They work like the zoom slider for the frequency axis. So they block each other.
-12. **Export**: copy the current visible image (just the spectrogram with correct axis) to the clipboard,
+## Done on the way to 2.0
 
+- 1.3.3 real-time items (section 2), 1.3.4 only `TGMStaticLib/FFT.cpp` is built,
+  1.3.5 no compiler warnings left
+- 1.4.0 crosshair with frequency, note and level at the mouse
+- 1.5.0 switchable log frequency axis (lower limit at least 20 Hz in log mode)
+- 1.5.1 / 1.5.2 linear axis: bins exactly at their frequency, maximum per pixel when there
+  are more bins than pixel rows, frequency labels at round steps
 
-This steps would finalize Version 2 and I would say, we can call it: the musical spectrogram.
-  
+# Version 2.0 -- "the musical spectrogram"
 
+Agreed on 2026-09-29. Intermediate versions do not have to look finished, as long as the
+final layout below is the target.
+
+## Decisions
+
+1. The plugin grows by the new time zoom strip and the time axis labels, and gets wider for
+   the title bar controls: base size about **840 x 580** instead of 800 x 550 (still freely
+   scalable, fixed aspect ratio). The title image stays.
+2. The readout label in the bottom row is removed; the crosshair shows the same values.
+3. Pause becomes a small icon button (pause / play symbols).
+4. Averaging gets a horizontal slider in the bottom row.
+5. All overlay controls (and everything else that would have gone into an extra control
+   row) go into the **title bar**, to save space: Lin/Log (stays above the frequency axis),
+   keyboard overlay, BPM grid with its resolution box and the BPM value, Export.
+6. Export saves the visible spectrogram with its axes as a **PNG file** (file dialog).
+   JUCE's clipboard only takes text; copying the image to the clipboard would need native
+   code for each platform and can come later.
+7. **Range sliders** (one slider with two thumbs, `TwoValueHorizontal` / `TwoValueVertical`)
+   for the time axis, the frequency axis and the colour range. The thumbs cannot cross, and
+   dragging between them moves the whole window. They replace the two separate frequency
+   sliders and the two colour sliders (colour: thumbs at the current min/max of the colour
+   range).
+8. Time axis labels **below** the spectrogram, the time zoom slider above it.
+   Scroll mode (default): time relative to now, -10 s ... 0 s. Fix mode (fixed image,
+   running cursor): **sweep time** as on an ECG monitor, 0 s at the left edge ... 10 s at the
+   right; the labels stay still and the cursor shows the current position of the sweep.
+   With time zoom the labels show the selected part (e.g. -6 s ... -3 s, or 4 s ... 7 s).
+9. **All settings are saved** with the project: FFT size, window, overlap, colormap,
+   lin/log, Run/Fix, averaging, keyboard and BPM overlay, BPM resolution, time and frequency
+   range, colour range, window size. The new ones are parameters that are not automatable
+   (they do not clutter the host's automation list).
+
+## Target layout (base size about 840 x 580)
+
+```
++--------------------------------------------------------------------------------+
+|[Lin] JadeSpectrogram ...          [keys][BPM][1/4 v] 120 BPM [export]  [logo]  |  title bar
+|      ======[#################################]======    time zoom (range)      |  NEW
++--+---+---------------------------------------------------------+----+----+----+
+|  |20k|                                                         |    | 20 |    |
+|/\|   |                                                         | co |    | /\ |  frequency range
+|  |   |                  spectrogram                            | lo |    |    |  slider (left),
+|\/|   |                                                         | ur |    | \/ |  colour range
+|  |  1|                                                         |    |-80 |    |  slider (right)
++--+---+---------------------------------------------------------+----+----+----+
+|      | -10 s     -8 s     -6 s     -4 s     -2 s      0 s      |              |  NEW time axis
+|      |  (Fix mode: 0 s ... 10 s sweep time, cursor = now)         |              |
+|      |[||][Fix] [Hann v] [50% v] [2048 v]  Avg ===o==== 120 ms  | [cmap v]     |  bottom row
++--------------------------------------------------------------------------------+
+```
+
+## Steps (one branch and one minor version each)
+
+1. **1.6.0 Layout**: new base size, time axis row with labels in seconds (for the current
+   8 s), empty zoom strip, Pause as icon button, readout label removed, title bar prepared
+   for the controls (Lin/Log already there).
+2. **1.7.0 Save all settings** (decision 9) for the existing controls: FFT size, window,
+   colormap, lin/log, Run/Fix. The following steps add their parameters to it.
+3. **1.8.0 Range sliders for frequency and colour** (decision 7, vertical) instead of the
+   two frequency sliders and the two colour sliders.
+4. **1.9.0 Averaging** (item 5 of the old list): exponential smoothing along time, a first
+   order IIR filter per bin on the power spectrum in the audio thread (before the dB
+   conversion, so it does not depend on the GUI frame rate), coefficient from tau and the
+   hop size. The leftmost slider position is off (tau below one block: alpha = 1). The value
+   is shown in ms. Reset when the FFT size changes.
+5. **1.10.0 Overlap 50 / 75 %** (item 9): `SpectrumAnalyzer` supports 75 % already. Needed
+   for 8192-point FFTs, otherwise the time axis jumps too much. Parameter, saved.
+6. **1.11.0 Time window 10 s and time zoom** (item 11): internal memory 10 s, horizontal
+   range slider above the display, time labels below follow the zoom (decision 8: relative
+   time in Scroll mode, sweep time in Fix mode).
+7. **1.12.0 Keyboard overlay** (item 8): switchable, small transparent overlay on the left
+   side of the spectrogram with a musical keyboard (white and black stripes) and the note
+   names at their frequencies; button icon: a small 1/8 note.
+8. **1.13.0 BPM grid** (item 10): switched with a metronome icon button (drawn as a path);
+   BPM from the host, displayed in the title bar; vertical
+   lines at every beat, 1/2, 1/4 or 1/8 note, drawn on top of the spectrogram. Resolution
+   box with note symbols, only visible while the grid is on; resolution is a parameter.
+   The host's beat position (ppq) travels through the FIFO with each slice (like the slice
+   size), so the lines sit on the beats also after tempo changes and transport jumps;
+   BPM and position follow the host when the transport starts, stops or jumps.
+9. **1.14.0 Export PNG** (item 12, decision 6): the visible spectrogram with correct axes.
+10. **2.0.0 Release**: manual (new screenshot, all new controls, release notes), marketing
+    texts, pluginval (strictness 10, 5 runs), the test programs, CI build, tag v2.0.0.
+
+## Open questions
+
+- **Space in the title bar**: at 800 px the title image (500 px) and the logo leave about
+  160 px; keys, BPM, resolution box, BPM value and Export need about 180 px. Options:
+  a shorter title image for 2.0 (e.g. "JadeSpectrogram 2 - the musical spectrogram", with
+  "by Hoertechnik und Audiologie" moved to the about box), or a base width of about 840 px.
+  Answer: increase the base width to 840 px, keep the title image.
+- **Colour sliders** (right side): also one range slider, for consistency with decision 7?
+  Answer: one range slider, with the thumbs at the current min/max of the colour range. The
+  colour range is saved with the project (decision 9).
+- **Icon for the BPM grid**: e.g. a metronome.
+  Answer: good idea, draw the icon yourself
+- **Time labels in Fix mode** (fixed image, running cursor): seconds relative to the
+  cursor, or absolute since the start of the display?
+  Answer: if we use reletive seconds the x axis would move, wouldn't it?
+  Proposal (Claude): yes, relative labels would have to move with the cursor. Therefore
+  sweep time in Fix mode: 0 s at the left edge ... 10 s at the right, labels stay still,
+  the cursor shows the current sweep position; Scroll mode keeps -10 s ... 0 s
+  (see decision 8). Confirmed.
