@@ -56,7 +56,7 @@ void CColorPalette::setValueRange (float Min, float Max)
 		m_Min = Max;
 		m_Max = Min;
 	}
-	if (m_Max == m_Min)
+	if (!(m_Max > m_Min)) // equal (exact comparison intended, avoids a division by zero)
 		m_Min = 0.99f*m_Max;
 
 	m_AccessMult = static_cast<float>(m_NrOfColors)/(m_Max-m_Min);
@@ -103,7 +103,7 @@ float CColorPalette::getValue(unsigned int iColor)
 	float value;
 	for (kk = 0 ;kk < m_NrOfColors ;kk++)
 	{
-		if (m_Color[kk] == iColor)
+		if (m_Color[static_cast<size_t>(kk)] == iColor)
 		{
 			value = static_cast<float>(kk)/m_AccessMult + m_Min;
 			return value;
@@ -116,7 +116,7 @@ float CColorPalette::getValue(unsigned int iColor)
 /// Resizes the color vector to hold m_NrOfColors entries
 void CColorPalette::AllocateColors(void)
 {
-	m_Color.resize(m_NrOfColors);
+	m_Color.resize(static_cast<size_t>(m_NrOfColors));
 	ComputeColors();
 
 }
@@ -135,7 +135,7 @@ void CColorPalette::ComputeColors(void)
 		for (kk = 0; kk < m_NrOfColors ; kk++)
 		{
 			if (kk <= Half) // Black
-				m_Color[kk] = 0;
+				setColor(kk, 0);
 			else // White - simple black/white transition
 			{
 				int iRed = 255<<16;
@@ -144,9 +144,9 @@ void CColorPalette::ComputeColors(void)
 				int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 			}
 		}
 		break;
@@ -161,9 +161,9 @@ void CColorPalette::ComputeColors(void)
 			int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 		break;
 	case PaletteName::kRainbow:
@@ -230,9 +230,9 @@ void CColorPalette::ComputeColors(void)
 			int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 		break;
 	case PaletteName::kHot:
@@ -267,9 +267,9 @@ void CColorPalette::ComputeColors(void)
 			int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 
 		break;
@@ -288,9 +288,9 @@ void CColorPalette::ComputeColors(void)
 			int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 		break;
 	case PaletteName::kPlasma:
@@ -307,9 +307,9 @@ void CColorPalette::ComputeColors(void)
 			int iColor = iRed|iGreen|iBlue;
 
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 		break;
 	case PaletteName::kJade:
@@ -356,9 +356,9 @@ void CColorPalette::ComputeColors(void)
 
 			// Apply inversion if enabled
 			if (m_InvertScheme)
-				m_Color[m_NrOfColors-kk-1] = iColor;
+				setColor(m_NrOfColors-kk-1, iColor);
 			else
-				m_Color[kk] = iColor;
+				setColor(kk, iColor);
 		}
 
 		break;

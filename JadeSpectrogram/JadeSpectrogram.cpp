@@ -130,6 +130,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
             if (cc == 0)
                 m_timeInLeft[kk] = data[cc][kk];
             else if (cc == 1)
+            {
                 if (mixMode == JadeSpectrogramAudio::ChannelMixMode::TimeMean)
                 {   // compute the mean and use for both channels
                     m_timeInLeft[kk] += data[cc][kk];
@@ -140,6 +141,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
                 {
                     m_timeInRight[kk] = data[cc][kk];
                 }
+            }
         }
     }
     // Compute Periodograms for each channel
@@ -272,7 +274,7 @@ m_colorpalette(256,CColorPalette::PaletteName::kPlasma),m_maxDisplayFreq(20000.f
 m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 //,m_editor(editor)
 {
-    m_internalHeight = static_cast<int>(m_processor.m_algo.getSpectrumSize());
+    m_internalHeight = m_processor.m_algo.getSpectrumSize();
     float fs = m_processor.m_algo.getSamplerate();
     m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/static_cast<float>(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
 
@@ -465,8 +467,7 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     for (int kk = 0; kk < cbHeight; kk++)
     {   
         float val = float(kk)/cbHeight*(g_maxColorVal - g_minColorVal) + g_minColorVal;
-        int color = m_colorpalette.getRGBColor(val);
-        color = color|0xFF000000; // kein alpha blending
+        juce::uint32 color = m_colorpalette.getRGBColor(val) | 0xFF000000u; // kein alpha blending
         colorbar.setPixelAt(0,cbHeight-1-kk,juce::Colour(color));
     }
     g.drawImage(colorbar,w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)),0,static_cast<int>(m_scaleFactor*g_colorbar_width),static_cast<int>(h-m_scaleFactor*g_menuHeight),
@@ -557,8 +558,6 @@ void JadeSpectrogramGUI::timerCallback()
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
 
-    auto p = getMouseXYRelative();
-
     bool stilldataavailable;
     do
     {
@@ -568,7 +567,7 @@ void JadeSpectrogramGUI::timerCallback()
             break;
         if (actSpectrumSize != m_internalHeight)
         {
-            m_internalHeight = static_cast<int>(actSpectrumSize);
+            m_internalHeight = actSpectrumSize;
             float fs = m_processor.m_algo.getSamplerate();
             m_internalWidth = static_cast<size_t>(g_pastTimeMemLen_s * fs/(m_internalHeight-1)); ///(m_internalHeigt-1) is hopsize
 
@@ -613,7 +612,7 @@ void JadeSpectrogramGUI::timerCallback()
 
                     for (int dd = 1 ; dd <= drawwidth ;++dd)
                     {
-                        int drawpos = m_displaymem_writepos+dd;
+                        size_t drawpos = m_displaymem_writepos + static_cast<size_t>(dd);
                         if (drawpos >= m_internalWidth)
                             drawpos -= m_internalWidth;
                         destData.setPixelColour(drawpos,m_internalHeight-1-hh,juce::Colours::red);
@@ -643,11 +642,11 @@ void JadeSpectrogramGUI::timerCallback()
 
         for (size_t ww = m_internalWidth-m_newDataAvailable ; ww < m_internalWidth; ++ww)
         {
-            int readpos;
+            size_t readpos;
             if (startread < 0)
-                readpos = m_internalWidth+(startread);
+                readpos = m_internalWidth - static_cast<size_t>(-startread);
             else
-                readpos = startread;
+                readpos = static_cast<size_t>(startread);
             for (size_t hh = 0; hh < m_internalHeight; ++hh)
             {
                 float val = m_displaymem.at(readpos).at(hh);
@@ -666,12 +665,12 @@ void JadeSpectrogramGUI::timerCallback()
     if (m_recomputeAll == true) // if the color palette has changed, we have to recompute all colors in the bitmap
     {
         m_recomputeAll = false;
-        int newwstart = m_internalWidth-m_displaymem_writepos;
+        size_t newwstart = m_internalWidth-m_displaymem_writepos; // writepos < width, so > 0
         const Image::BitmapData destData (m_internalImg, 0, 0, m_internalWidth, m_internalHeight, Image::BitmapData::readWrite);
 
         for (size_t ww = 0; ww < m_internalWidth; ++ww)
         {
-            int neww = ww+newwstart;
+            size_t neww = ww+newwstart;
             if (neww>=m_internalWidth)
                 neww -= m_internalWidth;
             for (size_t hh = 0; hh < m_internalHeight; ++hh)
@@ -703,7 +702,7 @@ void JadeSpectrogramGUI::timerCallback()
 
                     for (int dd = 1 ; dd <= drawwidth ;++dd)
                     {
-                        int drawpos = m_displaymem_writepos+dd;
+                        size_t drawpos = m_displaymem_writepos + static_cast<size_t>(dd);
                         if (drawpos >= m_internalWidth)
                             drawpos -= m_internalWidth;
                         destData.setPixelColour(drawpos,m_internalHeight-1-hh,juce::Colours::red);
@@ -760,7 +759,7 @@ void JadeSpectrogramGUI::changeFFTSize()
     //DBG(String(fftSize));
     // only a request, the audio thread switches at its next block;
     // the timer picks up the new size with the first slice of that size
-    m_processor.m_algo.setFFTSize(fftSize);
+    m_processor.m_algo.setFFTSize(static_cast<size_t>(fftSize));
 }
 
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
@@ -788,7 +787,7 @@ void JadeSpectrogramGUI::setLabelText(int x, int y)
 
         // recompute the time index from display index
         float maxw = 0.8*w;
-        size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * (x-wstart)/maxw +0.5);
+        size_t timeindex = static_cast<size_t> ((m_internalWidth-1) * static_cast<size_t>(x-wstart)/maxw +0.5); // x > wstart (see if)
         float val = -100.f;
         if (m_isRunningDisplay)
         {   
@@ -796,10 +795,10 @@ void JadeSpectrogramGUI::setLabelText(int x, int y)
         }
         else
         {
-            int distanz = m_internalWidth - timeindex;
-            int memindex = m_displaymem_writepos - distanz;
-            if (memindex<0)
-                memindex += m_internalWidth;
+            // index of the column that is shown at timeindex (the newest data is at the right edge)
+            size_t distanz = m_internalWidth - timeindex; // 1 ... width
+            size_t memindex = (m_displaymem_writepos >= distanz) ? m_displaymem_writepos - distanz
+                                                                 : m_displaymem_writepos + m_internalWidth - distanz;
 
             val = m_displaymem.at(memindex).at(freqindex);
 

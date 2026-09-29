@@ -101,5 +101,5 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
 5. - **Smoothing / averaging** along time (exponential, tau as smoothing paramater should be a slider)
 6. ~~`TGMStaticLib` compiles its own copy of the JUCE modules~~ -- done in 1.3.4: the plugin
   compiles only `TGMStaticLib/FFT.cpp` (no JUCE dependency), the library is not built.
-7. Reduce warnings (sign conversions, `-Wswitch`, shadowed `p` in `timerCallback`).
+7. ~~Reduce warnings~~ -- done in 1.3.5: no warnings left in the plugin code (GCC, JUCE recommended warning flags).
 8. add a small transparent overlay (button to switch on/off) that shows a musical keyboard (white and black stripes) and the note names for the frequencies on the left side of the spectrogram.

@@ -4,7 +4,7 @@
 
 
 SpectrumAnalyzer::SpectrumAnalyzer(double sampleRate, size_t fftSize, size_t blockSize, OverlapPercentage overlap, WindowType type)
-:m_sampleRate(sampleRate), m_overlap(overlap), m_windowType(type)
+:m_sampleRate(sampleRate), m_windowType(type), m_overlap(overlap)
 {
     setBlockSize(blockSize);
     setFFTSize(fftSize);
@@ -167,6 +167,7 @@ std::string SpectrumAnalyzer::getWindowTypeAsString(WindowType type) const
             return "Flat Top";
         case WindowType::HannPoisson:
             return "Hann-Poisson";
+        case WindowType::NrOfWindowTypes: // not a window, only the count
         default:
             return "Unknown";
     }
@@ -218,6 +219,7 @@ void SpectrumAnalyzer::setWindowFunction()
                 break;
             // More window types can be added here (example: gaussian, tukey, Kaiser, ...)
 
+            case WindowType::NrOfWindowTypes: // not a window, only the count
             default:
                 m_window[kk] = 1.f;
                 break;

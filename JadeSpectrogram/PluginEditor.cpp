@@ -120,7 +120,6 @@ void JadeSpectrogramAudioProcessorEditor::mouseDown (const MouseEvent& event)
     int y = event.getMouseDownY();
 
     int w = getWidth();
-    int h = getHeight();
     float scaleFactor = float(w)/g_minGuiSize_x;
     int LogoSize = 32;
     float newLogo_x = LogoSize*m_JadeLogo.getWidth()/m_JadeLogo.getHeight();
@@ -128,8 +127,8 @@ void JadeSpectrogramAudioProcessorEditor::mouseDown (const MouseEvent& event)
     if (m_aboutboxvisible == false)
     {
         // Is the Logo cicked
-        if ((x>scaleFactor*(g_spec_x+g_spec_width-newLogo_x) & y > scaleFactor*(g_spec_y-30) )&
-        (x < scaleFactor*(g_spec_x+g_spec_width)) & (y < scaleFactor*(g_spec_y)))
+        if (x > scaleFactor*(g_spec_x+g_spec_width-newLogo_x) && y > scaleFactor*(g_spec_y-30) &&
+            x < scaleFactor*(g_spec_x+g_spec_width) && y < scaleFactor*(g_spec_y))
         {
             m_aboutboxvisible = true; 
         }
