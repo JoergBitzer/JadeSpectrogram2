@@ -42,3 +42,7 @@
 
 # directories
 build
+
+# local marketing texts (KVR product page and forum)
+marketing.md
+marketing.html

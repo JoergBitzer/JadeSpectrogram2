@@ -25,16 +25,37 @@ a ReadMeFirst.txt with the installation steps and the license files.
 3. Zero latency: a pure analyzer, the audio passes through unchanged (1.3)
 4. Changing FFT size or window while the audio runs causes no dropouts (1.3)
 
+## Build from source
+
+The plugin uses [JUCE 9](https://juce.com) (tested with 9.0.3, branch `master`) and CMake.
+JUCE and [TGMStaticLib](https://github.com/JoergBitzer/TGMStaticLib) are git submodules,
+so everything needed is in this repository:
+
+```console
+git clone --recursive https://github.com/JoergBitzer/JadeSpectrogram2.git
+cd JadeSpectrogram2
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target JadeSpectrogram_VST3 JadeSpectrogram_Standalone
+# macOS additionally: --target JadeSpectrogram_AU
+```
+
+The results are in `build/JadeSpectrogram/JadeSpectrogram_artefacts/Release/`. On Linux,
+install the JUCE dependencies first (see `JUCE/docs/Linux Dependencies.md`; the list used
+for the release builds is in `.github/workflows/release.yml`).
+
+To update JUCE: `cd JUCE && git fetch --tags && git checkout <version>`, then commit the
+new submodule state.
+
 ## License
 
 - **Source code of this repository: [MIT License](LICENSE)**, (c) Joerg Bitzer, Jade Hochschule.
 - **Plugin binaries:** they contain third-party code:
-  - [JUCE 8](https://github.com/juce-framework/JUCE), used under the
+  - [JUCE 9](https://github.com/juce-framework/JUCE), used under the
     [AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html) (JUCE is dual-licensed
     AGPLv3 / commercial JUCE licence). Therefore the binaries as a whole are
     distributed under the **AGPLv3** (full text: [LICENSE-AGPL-3.0.txt](LICENSE-AGPL-3.0.txt));
     the complete source code is this repository plus JUCE.
-  - the VST3 SDK 3.8 by Steinberg (bundled with JUCE; MIT License) -- VST is a
+  - the VST3 SDK 3.8 by Steinberg (bundled with JUCE 9; MIT License) -- VST is a
     registered trademark of Steinberg Media Technologies GmbH;
   - the Audio Unit SDK by Apple (Apache License 2.0, macOS AU only);
   - the FFT by Uwe Simmer in [TGMStaticLib](https://github.com/JoergBitzer/TGMStaticLib)

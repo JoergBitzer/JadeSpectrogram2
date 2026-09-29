@@ -92,3 +92,16 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
 1. Remaining real-time items (section 2) and the tests/CI (section 6).
 2. Log frequency axis, overlap selection, saving the GUI settings.
 3. Larger features: stereo views, multi-resolution, export.
+
+## next steps on a finer scale
+1. Remaining real-time items (section 2)
+2. log frequency axis with a small button to switch between lin/log
+3. - **Crosshair / cursor** that shows frequency, note and level directly at the mouse.
+4. **Export**: copy the current image (just the spectrogram with axis) to the clipboard,
+5. - **Smoothing / averaging** along time (exponential, tau as smoothing paramater should be a slider)
+6. - `TGMStaticLib` links `juce::juce_gui_basics` itself, so it compiles its own copy of the
+  JUCE modules, with other options than the plugin (e.g. `JUCE_USE_CURL` on, so the Linux CI
+  needs the curl headers). Better: let the library only use the JUCE headers and have the
+  plugin provide the modules.
+7. Reduce warnings (sign conversions, `-Wswitch`, shadowed `p` in `timerCallback`).
+8. add a small transparent overlay (button to switch on/off) that shows a musical keyboard (white and black stripes) and the note names for the frequencies on the left side of the spectrogram.
