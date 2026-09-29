@@ -732,15 +732,16 @@ void JadeSpectrogramGUI::runClicked()
 {
     m_isRunningDisplay = !m_isRunningDisplay;
     
-    if (m_isRunningDisplay)
-    {
-        m_runModeButton.setButtonText("Fix");
-        m_runModeButton.setToggleState(false,NotificationType::dontSendNotification);
-    }
-    else
+    // the label shows what a click does (as at startup: scrolling display -> "Fix")
+    if (m_isRunningDisplay) // fixed image, red cursor runs over it
     {
         m_runModeButton.setButtonText("Run");
         m_runModeButton.setToggleState(true,NotificationType::dontSendNotification);
+    }
+    else // scrolling display
+    {
+        m_runModeButton.setButtonText("Fix");
+        m_runModeButton.setToggleState(false,NotificationType::dontSendNotification);
     }    
 }
 void JadeSpectrogramGUI::pauseClicked()
