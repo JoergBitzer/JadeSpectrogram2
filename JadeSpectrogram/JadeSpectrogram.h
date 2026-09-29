@@ -151,7 +151,9 @@ public:
 	void resized() override;
     void setScaleFactor(float newscale){m_scaleFactor = newscale;};	
     void timerCallback() override;
-    std::function<void()> somethingChanged;    
+    std::function<void()> somethingChanged;
+    // lin/log switch; the editor places it above the frequency axis (in its title bar)
+    juce::Button& getFreqAxisButton() { return m_freqAxisButton; }    
     //void mouseMove (const MouseEvent& event);    	
 private:
 	JadeSpectrogramAudioProcessor& m_processor;

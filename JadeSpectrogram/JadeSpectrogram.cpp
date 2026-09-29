@@ -337,7 +337,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_logFreqAxis = m_processor.getLogFreqAxis();
     setFreqAxisButtonText();
     m_freqAxisButton.onClick = [this](){freqAxisClicked();};
-    addAndMakeVisible(m_freqAxisButton);
+    // no addAndMakeVisible here: the editor shows the button above the frequency axis (title bar)
     updateFrequencyMapping();
 
     m_runModeButton.setButtonText("Fix");
@@ -564,9 +564,6 @@ void JadeSpectrogramGUI::resized()
 
     m_pauseButton.setBounds(static_cast<int>(m_scaleFactor*g_PauseButton_x),  static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
                     static_cast<int>(m_scaleFactor*g_ButtonWidth),static_cast<int>(m_scaleFactor*g_ButtonHeight));
-    // lin/log switch in the gap between the pause button and the window selector
-    m_freqAxisButton.setBounds(static_cast<int>(m_scaleFactor*(g_PauseButton_x + g_ButtonWidth + 6)), static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),
-                    static_cast<int>(m_scaleFactor*44), static_cast<int>(m_scaleFactor*g_ButtonHeight));
 
     int w = getWidth();
     int x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.8*w - m_scaleFactor*g_ButtonWidth);
@@ -817,9 +814,9 @@ void JadeSpectrogramGUI::mouseExit (const MouseEvent& event)
 
 void JadeSpectrogramGUI::setFreqAxisButtonText()
 {
-    // as the Run/Fix button: the label shows what a click does, highlighted while log is on
+    // as the Run/Fix button: the label shows what a click does; same colour in both states
+    // (lin and log are equally important)
     m_freqAxisButton.setButtonText(m_logFreqAxis ? "Lin" : "Log");
-    m_freqAxisButton.setToggleState(m_logFreqAxis, NotificationType::dontSendNotification);
 }
 
 void JadeSpectrogramGUI::freqAxisClicked()
