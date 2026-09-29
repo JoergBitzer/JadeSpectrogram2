@@ -304,6 +304,7 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
         static_cast<int>(CColorPalette::PaletteName::kPlasma), choice));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::logFreqAxis, "Log frequency axis", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::fixDisplay, "Fix display", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::keyboardOverlay, "Keyboard overlay", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
     const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
@@ -423,6 +424,19 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     syncFromParameters(); // lin/log and Run/Fix from the saved settings
     setFreqAxisButtonText();
     m_freqAxisButton.onClick = [this](){freqAxisClicked();};
+    // keyboard overlay button: a small keyboard (5 white, 3 black keys), highlighted while on
+    m_keyboardButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = r.withSizeKeepingCentre(r.getWidth()*1.4f, r.getHeight());
+        const float keyW = r.getWidth()/5.f;
+        g.setColour(c);
+        for (int k = 0; k < 5; ++k)
+            g.drawRect(r.getX() + keyW*static_cast<float>(k), r.getY(), keyW, r.getHeight(), 1.f);
+        for (int k : {1, 2, 4}) // C#, D#, F#
+            g.fillRect(r.getX() + keyW*(static_cast<float>(k) - 0.3f), r.getY(), 0.6f*keyW, 0.6f*r.getHeight());
+    };
+    m_keyboardButton.setTooltip("Keyboard overlay: semitone bands and note names over the spectrogram");
+    m_keyboardButton.onClick = [this](){ setBoolParameter(JadeParamID::keyboardOverlay, !m_keyboardOverlay); syncFromParameters(); repaint(); };
     updateDisplayRange();
     // no addAndMakeVisible here: the editor shows the button above the frequency axis (title bar)
     updateFrequencyMapping();
@@ -535,6 +549,8 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
         g.drawImageTransformed(m_internalImg, juce::AffineTransform::scale(sx, sy)
                                                   .translated(static_cast<float>(wStartPic) - colStart*sx, static_cast<float>(top) - rowTop*sy));
     }
+    if (m_keyboardOverlay)
+        drawKeyboardOverlay(g, display, m_scaleFactor*static_cast<float>(TextHeight));
     drawFrequencyAxis(g, static_cast<int>(static_cast<float>(wStartPic)-g_FreqMeter*m_scaleFactor), top, displayH,
                       m_scaleFactor*static_cast<float>(TextHeight));
     drawTimeAxis(g, display, m_scaleFactor*static_cast<float>(TextHeight));
@@ -891,6 +907,12 @@ void JadeSpectrogramGUI::syncFromParameters()
     const bool fixed = m_apvts.getRawParameterValue(JadeParamID::fixDisplay)->load() > 0.5f;
     if (fixed != m_isRunningDisplay)
         setDisplayMode(fixed);
+    const bool keys = m_apvts.getRawParameterValue(JadeParamID::keyboardOverlay)->load() > 0.5f;
+    if (keys != m_keyboardOverlay || keys != m_keyboardButton.getToggleState())
+    {
+        m_keyboardOverlay = keys;
+        m_keyboardButton.setToggleState(keys, NotificationType::dontSendNotification);
+    }
 }
 
 void JadeSpectrogramGUI::pauseClicked()
@@ -1018,6 +1040,60 @@ float JadeSpectrogramGUI::timeSpan() const
     // one display column per hop (the hop travels with the slices)
     const float fs = m_processor.m_algo.getSamplerate();
     return static_cast<float>(m_internalWidth)*static_cast<float>(m_currentHop)/fs;
+}
+
+void JadeSpectrogramGUI::drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<int> display, float textH) const
+{
+    // Piano roll: one band per semitone from a quarter tone below to a quarter tone above the note
+    // (A4 = 440 Hz), the same boundaries as the rounding of the readout. Black keys darken, white
+    // keys lighten slightly; lines where two white keys meet (E/F, B/C), stronger at C. Bands
+    // thinner than about 3 px fade out (linear axis at low frequencies), note names at every C,
+    // and at every note when a band is taller than the text.
+    const float displayH = static_cast<float>(display.getHeight());
+    const float top = static_cast<float>(display.getY());
+    const float fmin = yToFrequency(displayH, displayH), fmax = yToFrequency(0.f, displayH);
+    const float labelH = 0.6f*textH;
+    const float quarterTone = std::pow(2.f, 1.f/24.f);
+    juce::Graphics::ScopedSaveState state(g);
+    g.reduceClipRegion(display);
+    g.setFont(0.9f*labelH);
+    const juce::MidiMessage names;
+    for (int n = 0; n <= 135; ++n)
+    {
+        const float fc = 440.f*std::pow(2.f, static_cast<float>(n - 69)/12.f);
+        const float flo = fc/quarterTone, fhi = fc*quarterTone;
+        if (fhi < fmin || flo > fmax)
+            continue;
+        const float ylo = top + frequencyToY(flo, displayH); // lower edge (larger y)
+        const float yhi = top + frequencyToY(fhi, displayH);
+        const float bandH = ylo - yhi;
+        const float fade = juce::jlimit(0.f, 1.f, (bandH - 1.5f)/1.5f);
+        const int pitch = n % 12;
+        const bool black = (pitch == 1 || pitch == 3 || pitch == 6 || pitch == 8 || pitch == 10);
+        if (fade > 0.f)
+        {
+            g.setColour(black ? juce::Colours::black.withAlpha(0.22f*fade) : juce::Colours::white.withAlpha(0.06f*fade));
+            g.fillRect(static_cast<float>(display.getX()), yhi, static_cast<float>(display.getWidth()), bandH);
+            if (pitch == 0 || pitch == 5) // lower edge of C and F: where two white keys meet
+            {
+                g.setColour(juce::Colours::white.withAlpha((pitch == 0 ? 0.55f : 0.3f)*fade));
+                g.drawHorizontalLine(static_cast<int>(ylo), static_cast<float>(display.getX()), static_cast<float>(display.getRight()));
+            }
+        }
+        // note names: every C (if its octave has room for the label), every note when the band is tall enough
+        const float octaveH = bandH*12.f;
+        const bool label = (bandH >= labelH) || (pitch == 0 && octaveH >= 1.5f*labelH);
+        if (label)
+        {
+            const float yc = 0.5f*(ylo + yhi);
+            const String name = names.getMidiNoteName(n, true, true, 4);
+            const juce::Rectangle<float> box(static_cast<float>(display.getX()) + 3.f, yc - 0.5f*labelH, 3.f*labelH, labelH);
+            g.setColour(juce::Colours::black.withAlpha(0.6f));
+            g.drawText(name, box.translated(1.f, 1.f), juce::Justification::centredLeft, false);
+            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.drawText(name, box, juce::Justification::centredLeft, false);
+        }
+    }
 }
 
 void JadeSpectrogramGUI::drawTimeAxis(juce::Graphics& g, juce::Rectangle<int> display, float textH) const

@@ -70,6 +70,7 @@ namespace JadeParamID
     inline const juce::String overlap {"Overlap"}; // 0: 50 %, 1: 75 %
     inline const juce::String timeStart {"TimeStart"}; // visible part of the time window,
     inline const juce::String timeEnd {"TimeEnd"};     // fractions 0 ... 1 (1 = right edge)
+    inline const juce::String keyboardOverlay {"KeyboardOverlay"}; // piano-roll bands over the spectrogram
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -189,7 +190,9 @@ public:
     void timerCallback() override;
     std::function<void()> somethingChanged;
     // lin/log switch; the editor places it above the frequency axis (in its title bar)
-    juce::Button& getFreqAxisButton() { return m_freqAxisButton; }    
+    juce::Button& getFreqAxisButton() { return m_freqAxisButton; }
+    // buttons that the editor shows in its title bar, right of the title image
+    juce::Button& getKeyboardButton() { return m_keyboardButton; }    
     //void mouseMove (const MouseEvent& event);    	
 private:
 	JadeSpectrogramAudioProcessor& m_processor;
@@ -251,6 +254,10 @@ private:
     void freqAxisClicked();
     void setFreqAxisButtonText();
     bool m_logFreqAxis = false;
+    // keyboard overlay (piano roll): one band per semitone, a quarter tone below to above the note
+    IconButton m_keyboardButton;
+    bool m_keyboardOverlay = false;
+    void drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<int> display, float textH) const;
     size_t m_imageRows = 1; // height of m_internalImg
     struct RowMap { size_t bin0; size_t bin1; float frac; bool useMax; };
     enum class AxisMap { Bins, LinearMax, Log };

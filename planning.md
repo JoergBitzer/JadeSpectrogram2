@@ -168,9 +168,10 @@ final layout below is the target.
    window, minimum 2 %). (item 11): internal memory 10 s, horizontal
    range slider above the display, time labels below follow the zoom (decision 8: relative
    time in Scroll mode, sweep time in Fix mode).
-7. **1.12.0 Keyboard overlay** (item 8): switchable, small transparent overlay on the left
-   side of the spectrogram with a musical keyboard (white and black stripes) and the note
-   names at their frequencies; button icon: a small 1/8 note.
+7. ~~**1.12.0 Keyboard overlay**~~ -- done: piano-roll bands (quarter tone below to above each note,
+   the same boundaries as the readout), lines at E/F and B/C, names at C and at every note when
+   zoomed; thin bands fade out on the linear axis. (item 8): switchable, small transparent overlay of the spectrogram with a musical keyboard (white and black stripes) and the note
+   names at their frequencies; button icon: a small keyboard with black and white keys (max 8 keys).
 8. **1.13.0 BPM grid** (item 10): switched with a metronome icon button (drawn as a path);
    BPM from the host, displayed in the title bar; vertical
    lines at every beat, 1/2, 1/4 or 1/8 note, drawn on top of the spectrogram. Resolution
