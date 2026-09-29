@@ -50,6 +50,8 @@ public:
     void setFFTSize(size_t fftSize);
     void setOverlap(OverlapPercentage overlap);
     void setWindowType(WindowType type){m_windowType = type; setWindowFunction(); };
+    WindowType getWindowType() const { return m_windowType; }
+    void reset(); // clears the overlap memory (no allocation)
     std::string getWindowTypeAsString(WindowType type) const;
 
 private:

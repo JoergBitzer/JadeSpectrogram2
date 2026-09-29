@@ -17,9 +17,10 @@ void SynchronBlockProcessor::prepareSynchronProcessing(int channels, int desired
     //m_protectBlock.enter();
     m_OutBlockSize = desiredSize;
     m_NrOfChannels = channels;
-    m_memory.setSize(m_NrOfChannels,2*m_OutBlockSize);
+    // avoidReallocating: a smaller (or equal) size than ever before does not allocate
+    m_memory.setSize(m_NrOfChannels,2*m_OutBlockSize,false,false,true);
     m_memory.clear();
-    m_block.setSize(m_NrOfChannels,m_OutBlockSize);
+    m_block.setSize(m_NrOfChannels,m_OutBlockSize,false,false,true);
     m_block.clear();
     m_OutCounter = 0;
     m_InCounter = 0;

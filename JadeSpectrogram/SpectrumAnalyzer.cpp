@@ -98,6 +98,14 @@ bool SpectrumAnalyzer::getFrequencyAxis(std::vector<float> &frequencyAxis)
     return true;
 }
 
+void SpectrumAnalyzer::reset()
+{
+    std::fill(m_mem50aIn.begin(), m_mem50aIn.end(), 0.f);
+    std::fill(m_mem25aIn.begin(), m_mem25aIn.end(), 0.f);
+    std::fill(m_mem25bIn.begin(), m_mem25bIn.end(), 0.f);
+    std::fill(m_mem25cIn.begin(), m_mem25cIn.end(), 0.f);
+}
+
 void SpectrumAnalyzer::setSampleRate(double sampleRate)
 {
     m_sampleRate = sampleRate;

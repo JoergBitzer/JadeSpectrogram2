@@ -18,7 +18,7 @@ TwoDimBlockFreeFiFO::TwoDimBlockFreeFiFO(size_t max_x, size_t max_y)
 
 bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock)
 {
-    assert(inBlock.size() == m_actSize_y);
+    assert(inBlock.size() <= m_actSize_y);
     const size_t write = m_writecounter.load(std::memory_order_relaxed); // only this thread writes it
     const size_t next = nextIndex(write);
 
@@ -28,7 +28,8 @@ bool TwoDimBlockFreeFiFO::push(const std::vector<float> &inBlock)
     if (next == m_readcounter.load(std::memory_order_acquire))
         return false;
 
-    memcpy(m_Mem[write].data(), inBlock.data(), m_actSize_y*sizeof(float));
+    memcpy(m_Mem[write].data(), inBlock.data(), inBlock.size()*sizeof(float));
+    m_sliceSize[write] = inBlock.size();
     m_writecounter.store(next, std::memory_order_release); // publish the slice
     return true;
 }
@@ -39,10 +40,18 @@ bool TwoDimBlockFreeFiFO::pop(std::vector<float> &outBlock)
     if (read == m_writecounter.load(std::memory_order_acquire)) // reading is faster than writing
         return false;
 
-    assert(outBlock.size() == m_actSize_y);
-    memcpy(outBlock.data(), m_Mem[read].data(), m_actSize_y*sizeof(float));
+    assert(outBlock.size() == m_sliceSize[read]);
+    memcpy(outBlock.data(), m_Mem[read].data(), m_sliceSize[read]*sizeof(float));
     m_readcounter.store(nextIndex(read), std::memory_order_release); // hand the slot back to the writer
     return true;
+}
+
+size_t TwoDimBlockFreeFiFO::getNextSliceSize() const
+{
+    const size_t read = m_readcounter.load(std::memory_order_relaxed);
+    if (read == m_writecounter.load(std::memory_order_acquire))
+        return 0;
+    return m_sliceSize[read];
 }
 
 size_t TwoDimBlockFreeFiFO::getNumAvailableToRead() const
@@ -70,6 +79,7 @@ bool TwoDimBlockFreeFiFO::setActSize(size_t act_x, size_t act_y)
     m_writecounter.store(0); // old counters may lie outside the new size
     m_readcounter.store(0);
     m_Mem.resize(m_actSize_x);
+    m_sliceSize.assign(m_actSize_x, act_y);
     m_actSize_y = act_y;
     for (size_t kk = 0; kk < m_actSize_x ; kk++)
     {

@@ -1,36 +1,113 @@
 #include <math.h>
 #include <cassert>
-#include <chrono>
-#include <thread>
 #include "JadeSpectrogram.h"
 
 #include "PluginProcessor.h"
 const float g_minValForLogSpectrogram = 1e-10f;
 
 JadeSpectrogramAudio::JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* processor)
-:SynchronBlockProcessor(), m_processor(processor),m_fftsize(2048)
+:SynchronBlockProcessor(), m_processor(processor), m_fs(48000.f), m_channels(2), m_fftsize(2048), m_freqsize(2048/2+1),
+m_fifo(1000, g_maxFFTSize/2+1) // 1000 time slices should be enough
 {
     m_mixMode = JadeSpectrogramAudio::ChannelMixMode::AbsMean;
     m_windowChoice = SpectrumAnalyzer::WindowType::Hann;
     m_PauseMode = false;
-
+    m_fifo.setActSize(999, g_maxFFTSize/2+1); // we push one time slice after the other
+    m_fifo.reset();
+    m_fifo.fill(10.f*log10f(g_minValForLogSpectrogram)); // fill with very low values
 }
 
 void JadeSpectrogramAudio::prepareToPlay(double sampleRate, int max_samplesPerBlock, int max_channels)
 {
-    juce::ignoreUnused(max_samplesPerBlock,max_channels);
+    juce::ignoreUnused(max_samplesPerBlock);
     m_channels = static_cast<size_t>(max_channels);
-    m_fftsize = 2048; 
     // here your code
     m_fs = static_cast<float>(sampleRate);
-    m_leftAnalyzer.setSampleRate(sampleRate);
-    m_rightAnalyzer.setSampleRate(sampleRate);
-    setFFTSize(m_fftsize);
+
+    // allocate everything for all FFT sizes here, so switchFFTSize() never allocates
+    for (size_t idx = 0; idx < g_nrOfFFTSizes; ++idx)
+    {
+        size_t fftsize = size_t(1) << (g_minFFTSizeLog2 + idx);
+        for (auto* analyzer : {&m_leftAnalyzers[idx], &m_rightAnalyzers[idx]})
+        {
+            analyzer->setSampleRate(sampleRate);
+            analyzer->setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
+            analyzer->setBlockSize(fftsize);
+            analyzer->setFFTSize(fftsize);
+            analyzer->setWindowType(m_windowChoice);
+            analyzer->reset();
+        }
+    }
+    const size_t maxHopSize = m_leftAnalyzers[g_nrOfFFTSizes-1].getHopSize();
+    prepareSynchronProcessing(static_cast<int>(m_channels),static_cast<int>(maxHopSize));
+    m_timeInLeft.reserve(maxHopSize);
+    m_timeInRight.reserve(maxHopSize);
+    m_perLeft.reserve(g_maxFFTSize/2+1);
+    m_perRight.reserve(g_maxFFTSize/2+1);
+    m_power.reserve(g_maxFFTSize/2+1);
+
+    m_fftsize = 0; // force the switch, also if the requested size did not change
+    applyPendingChanges();
+}
+
+void JadeSpectrogramAudio::processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages)
+{
+    applyPendingChanges();
+    SynchronBlockProcessor::processBlock(data, midiMessages);
+}
+
+void JadeSpectrogramAudio::applyPendingChanges()
+{
+    const size_t requestedFFTSize = m_requestedFFTSize.load();
+    if (requestedFFTSize != m_fftsize)
+        switchFFTSize(requestedFFTSize);
+
+    const auto requestedWindow = m_requestedWindow.load();
+    if (requestedWindow != m_windowChoice)
+    {
+        m_windowChoice = requestedWindow;
+        // same size as before, so the window is recomputed in place
+        m_leftAnalyzers[m_activeAnalyzer].setWindowType(m_windowChoice);
+        m_rightAnalyzers[m_activeAnalyzer].setWindowType(m_windowChoice);
+    }
+}
+
+void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
+{
+    // map to the prepared analyzers (512 ... 8192), unsupported sizes are clamped
+    size_t idx = 0;
+    while (idx + 1 < g_nrOfFFTSizes && (size_t(1) << (g_minFFTSizeLog2 + idx)) < newFFTSize)
+        ++idx;
+    m_activeAnalyzer = idx;
+    m_fftsize = newFFTSize;
+
+    auto& left = m_leftAnalyzers[m_activeAnalyzer];
+    auto& right = m_rightAnalyzers[m_activeAnalyzer];
+    left.reset();
+    right.reset();
+    if (left.getWindowType() != m_windowChoice)
+    {
+        left.setWindowType(m_windowChoice);
+        right.setWindowType(m_windowChoice);
+    }
+
+    // synchronblocksize should be the same as the hop size of the analyzers
+    const size_t synchronblocksize = left.getHopSize();
+    prepareSynchronProcessing(static_cast<int>(m_channels),static_cast<int>(synchronblocksize));
+    m_Latency = static_cast<int>(synchronblocksize);
+
+    // all within the capacity reserved in prepareToPlay, so no allocation
+    m_timeInLeft.resize(synchronblocksize);
+    m_timeInRight.resize(synchronblocksize);
+    m_freqsize = (size_t(1) << (g_minFFTSizeLog2 + m_activeAnalyzer))/2 + 1;
+    m_perLeft.resize(m_freqsize);
+    m_perRight.resize(m_freqsize);
+    m_power.resize(m_freqsize);
+    m_publishedFreqSize.store(m_freqsize);
 }
 
 int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer, juce::MidiBuffer &midiMessages, int NrOfBlocksSinceLastProcessBlock)
 {
-    juce::ScopedLock lock(m_protectBlock);    
     juce::ignoreUnused(midiMessages, NrOfBlocksSinceLastProcessBlock);
 
     size_t numSamples = static_cast<size_t>(buffer.getNumSamples());
@@ -61,10 +138,10 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         }
     }
     // Compute Periodograms for each channel
-    m_leftAnalyzer.getPeriodogram(m_timeInLeft, m_perLeft);
+    m_leftAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInLeft, m_perLeft);
     if (numChannels>1)
     {
-        m_rightAnalyzer.getPeriodogram(m_timeInRight, m_perRight);
+        m_rightAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInRight, m_perRight);
         switch (m_mixMode)
         {
             case JadeSpectrogramAudio::ChannelMixMode::AbsMean:
@@ -165,44 +242,9 @@ void JadeSpectrogramAudio::prepareParameter(std::unique_ptr<juce::AudioProcessor
     m_DisplayMaxColor.prepareParameter(vts->getRawParameterValue(paramDisplayMaxColor.ID));
 }
 
-void JadeSpectrogramAudio::setFFTSize(size_t newFFTSize)
-{
-    juce::ScopedLock lock(m_protectBlock);
-    m_fftsize = newFFTSize;
-    size_t synchronblocksize;
-    m_leftAnalyzer.setBlockSize(static_cast<int>(m_fftsize));
-    m_rightAnalyzer.setBlockSize(static_cast<int>(m_fftsize));
-    m_leftAnalyzer.setFFTSize(static_cast<int>(m_fftsize));
-    m_rightAnalyzer.setFFTSize(static_cast<int>(m_fftsize));
-    m_leftAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
-    m_rightAnalyzer.setOverlap(SpectrumAnalyzer::OverlapPercentage::perc50);
-    m_leftAnalyzer.setWindowType(m_windowChoice);
-    m_rightAnalyzer.setWindowType(m_windowChoice);
-    // synchronblocksize should be the same as the hop size of the analyzers, which is determined by the block size and the overlap percentage
-    synchronblocksize = m_leftAnalyzer.getHopSize();
-
-
-    prepareSynchronProcessing(static_cast<int>(m_channels),static_cast<int>(synchronblocksize));
-    m_Latency = static_cast<int>(synchronblocksize);
-
-    // reserve memory for the analyzers and the FIFO
-    m_timeInLeft.resize(synchronblocksize);
-    m_timeInRight.resize(synchronblocksize);
-    m_freqsize = static_cast<size_t>(m_fftsize/2)+1;
-    m_perLeft.resize(m_freqsize);
-    m_perRight.resize(m_freqsize);
-    m_power.resize(m_freqsize);
-    m_fifo.setMaxCapacity(1000, m_freqsize); // 1000 time slices should be enough
-    m_fifo.setActSize(999, m_freqsize); // we push one time slice after the other
-    m_fifo.reset();
-    m_fifo.fill(10.f*log10f(g_minValForLogSpectrogram)); // fill with very low values
-
-
-}
-
 void JadeSpectrogramAudio::setclosestFFTSize_ms(float fftsize_ms)
 {
-    m_fftsize = getnextpowerof2(fftsize_ms);    
+    setFFTSize(getnextpowerof2(fftsize_ms));
 }
 
 size_t JadeSpectrogramAudio::getnextpowerof2(float fftsize_ms)
@@ -316,7 +358,9 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_fftSizeCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
     m_fftSizeCombo.onChange = [this](){changeFFTSize();};
 
-    m_fftSizeCombo.setSelectedItemIndex(2,NotificationType::dontSendNotification);
+    // show the size the processor runs with (the editor may be reopened after a change)
+    int fftSizeIndex = static_cast<int>(std::log2(static_cast<double>(m_processor.m_algo.getFFTSize()))) - 9;
+    m_fftSizeCombo.setSelectedItemIndex(juce::jlimit(0, 4, fftSizeIndex),NotificationType::dontSendNotification);
     addAndMakeVisible(m_fftSizeCombo);
     m_FreqLabel.setText("Analysis",juce::NotificationType::dontSendNotification);
     m_FreqLabel.setJustificationType(juce::Justification::centred);
@@ -518,7 +562,10 @@ void JadeSpectrogramGUI::timerCallback()
     bool stilldataavailable;
     do
     {
-        size_t actSpectrumSize = m_processor.m_algo.getSpectrumSize();
+        // the size travels with each slice, so a new FFT size shows up exactly with its first slice
+        size_t actSpectrumSize = m_processor.m_algo.getNextMemSliceSize();
+        if (actSpectrumSize == 0) // nothing new
+            break;
         if (actSpectrumSize != m_internalHeight)
         {
             m_internalHeight = static_cast<int>(actSpectrumSize);
@@ -707,17 +754,13 @@ void JadeSpectrogramGUI::pauseClicked()
 
 void JadeSpectrogramGUI::changeFFTSize()
 {
-    stopTimer();
-    //_sleep(100);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     auto FFTSizeIndex = m_fftSizeCombo.getSelectedItemIndex();
     int fftSize = pow(2.0,9+FFTSizeIndex);
     
     //DBG(String(fftSize));
+    // only a request, the audio thread switches at its next block;
+    // the timer picks up the new size with the first slice of that size
     m_processor.m_algo.setFFTSize(fftSize);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    startTimer(40);
-    
 }
 
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)

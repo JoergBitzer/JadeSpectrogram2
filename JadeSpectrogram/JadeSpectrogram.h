@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <array>
+#include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "tools/AudioProcessParameter.h"
 #include "tools/SynchronBlockProcessor.h"
@@ -52,6 +54,11 @@ const struct
 }paramDisplayMaxColor;
 
 
+// FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
+constexpr size_t g_minFFTSizeLog2 = 9;
+constexpr size_t g_nrOfFFTSizes = 5;
+constexpr size_t g_maxFFTSize = size_t(1) << (g_minFFTSizeLog2 + g_nrOfFFTSizes - 1);
+
 class JadeSpectrogramAudio : public SynchronBlockProcessor
 {
 public:
@@ -66,6 +73,8 @@ public:
     };
     JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* processor);
     void prepareToPlay(double sampleRate, int max_samplesPerBlock, int max_channels);
+    // hides SynchronBlockProcessor::processBlock: applies pending FFT size / window changes first
+    void processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages);
     virtual int processSynchronBlock(juce::AudioBuffer<float>&, juce::MidiBuffer& midiMessages, int NrOfBlocksSinceLastProcessBlock);
 
     // parameter handling
@@ -75,30 +84,39 @@ public:
     // some necessary info for the host
     int getLatency(){return m_Latency;};
 
-	void setFFTSize(size_t newFFTSize);
+	// setFFTSize and setWindowType can be called from any thread (GUI): they only post a request,
+	// the audio thread applies it at the start of its next processBlock
+	void setFFTSize(size_t newFFTSize){m_requestedFFTSize.store(newFFTSize);};
+	size_t getFFTSize() const {return m_requestedFFTSize.load();};
     void setclosestFFTSize_ms(float fftsize_ms);
     void setPauseMode (bool mode){m_PauseMode = mode;};
     
     size_t getnextpowerof2(float fftsize_ms);
 
-    size_t getSpectrumSize(){return m_freqsize;};
+    size_t getSpectrumSize(){return m_publishedFreqSize.load();}; // spectrum size currently produced by the audio thread
     float getSamplerate(){return m_fs;};
-	void setWindowType(SpectrumAnalyzer::WindowType type){m_windowChoice = type; 
-		m_leftAnalyzer.setWindowType(type); m_rightAnalyzer.setWindowType(type);};
+	void setWindowType(SpectrumAnalyzer::WindowType type){m_requestedWindow.store(type);};
 	void setChannelMixMode(ChannelMixMode mode){m_mixMode = mode;};
+	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
+	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
 	bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
 
 private:
 	JadeSpectrogramAudioProcessor* m_processor;
-    CriticalSection m_protectBlock;
     int m_Latency = 0;
     float m_fs;
     size_t m_channels;
 
-	size_t m_fftsize;
-	size_t m_freqsize;
-	SpectrumAnalyzer m_leftAnalyzer;
-	SpectrumAnalyzer m_rightAnalyzer;
+	size_t m_fftsize; // active FFT size, audio thread only
+	size_t m_freqsize; // active spectrum size, audio thread only
+	std::atomic<size_t> m_publishedFreqSize {2048/2 + 1}; // copy of m_freqsize for the GUI
+	std::atomic<size_t> m_requestedFFTSize {2048};
+	std::atomic<SpectrumAnalyzer::WindowType> m_requestedWindow {SpectrumAnalyzer::WindowType::Hann};
+
+	// one prepared analyzer pair per FFT size, so switching the size never allocates
+	std::array<SpectrumAnalyzer, g_nrOfFFTSizes> m_leftAnalyzers;
+	std::array<SpectrumAnalyzer, g_nrOfFFTSizes> m_rightAnalyzers;
+	size_t m_activeAnalyzer = 0;
 	TwoDimBlockFreeFiFO m_fifo;
 	std::vector<float> m_power;
 	std::vector<float> m_perLeft;
@@ -106,7 +124,10 @@ private:
 	std::vector<float> m_timeInLeft;
 	std::vector<float> m_timeInRight;
     ChannelMixMode m_mixMode;
-	SpectrumAnalyzer::WindowType m_windowChoice;
+	SpectrumAnalyzer::WindowType m_windowChoice; // active window, audio thread only
+
+	void applyPendingChanges(); // audio thread, realtime safe
+	void switchFFTSize(size_t newFFTSize); // audio thread, realtime safe
 
 	// paramater
 	jade::AudioProcessParameter<float> m_DisplayMinFreq;

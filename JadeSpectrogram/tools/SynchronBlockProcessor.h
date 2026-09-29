@@ -34,7 +34,9 @@ public:
     ~SynchronBlockProcessor(){};
     /**
      * @brief preparetoprocess sets the desired blocksize for a given numer of channels
-     * it can be called at any time (threadsafe), but it will cause audio-glitches (not realtime safe)
+     * it is not threadsafe: call it from prepareToPlay or from the audio thread between two processBlock calls.
+     * It only allocates if desiredSize (or channels) is larger than in any call before, so calling it once
+     * with the maximum size in prepareToPlay makes later calls realtime safe
      * 
      * @param channels 
      * @param desiredSize 
