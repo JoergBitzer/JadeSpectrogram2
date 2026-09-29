@@ -66,8 +66,7 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
   `juce::Colour`. Writing directly into the line pointers of `Image::BitmapData` (and
   caching the palette as ARGB `uint32`) would make large windows and 8192-point FFTs cheaper.
 - **Crosshair / cursor** that shows frequency, note and level directly at the mouse.
-- **Colour bar labels** follow `g_minColorVal/g_maxColorVal`; they could follow the
-  min/max colour sliders so the labels match what is displayed.
+
 
 ## 6. Code quality and tests
 
@@ -97,9 +96,17 @@ The latency timer from v1.2.4 stays in the processor for the Process mode case.
 1. Remaining real-time items (section 2)
 2. ~~log frequency axis with a small button to switch between lin/log~~ -- done in 1.5.0 (lower limit at least 20 Hz in log mode).
 3. ~~**Crosshair / cursor** that shows frequency, note and level directly at the mouse~~ -- done in 1.4.0.
-4. **Export**: copy the current image (just the spectrogram with axis) to the clipboard,
-5. - **Smoothing / averaging** along time (exponential, tau as smoothing paramater should be a slider)
+5. - **Smoothing / averaging** along time (exponential, tau as smoothing parameter should be a slider, implemented as a simple first order iir filter), off should be most left position of the slider (when tau is below one block size and the alpha coefficient would be 1.f)
 6. ~~`TGMStaticLib` compiles its own copy of the JUCE modules~~ -- done in 1.3.4: the plugin
   compiles only `TGMStaticLib/FFT.cpp` (no JUCE dependency), the library is not built.
 7. ~~Reduce warnings~~ -- done in 1.3.5: no warnings left in the plugin code (GCC, JUCE recommended warning flags).
-8. add a small transparent overlay (button to switch on/off) that shows a musical keyboard (white and black stripes) and the note names for the frequencies on the left side of the spectrogram.
+8. add a small transparent overlay (button to switch on/off, draw little 1/8 note as the button icon) that shows a musical keyboard (white and black stripes) and the note names for the frequencies on the left side of the spectrogram.
+9. add a switch for 50 and 75% overlap (the `SpectrumAnalyzer` supports 75% already, but the plugin always uses 50%). I think this is necessary for 8192-point FFTs, otherwise the time axis jumps too much. The overlap should be a parameter, so it can be saved in the plugin state.
+10. get bpm from the host and display it, and show a vertical line at every beat (or every 1/2, 1/4, 1/8 note) in the spectrogram. The line should be drawn on top of the spectrogram, so it is visible even if the spectrum is bright there. The BPM resolution (1 Beat, 1/2, 1/4 or 1/8) should be a parameter (the listbox only visible when the overlay is on and with musical notes as symbols), so it can be saved in the plugin state. This overlay should be switchable on/off (I have no idea for a good icon at the moment), and the BPM should be updated when the host changes it (e.g. when the transport is started or stopped). 
+11. increase the internal time window to 10s and make the time axis zoomable. The x-axis labels are below and above the figure and the zoom sliders are above the figure. They work like the zoom slider for the frequency axis. So they block each other.
+12. **Export**: copy the current visible image (just the spectrogram with correct axis) to the clipboard,
+
+
+This steps would finalize Version 2 and I would say, we can call it: the musical spectrogram.
+  
+
