@@ -144,6 +144,9 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         m_rightAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInRight, m_perRight);
         switch (m_mixMode)
         {
+            case JadeSpectrogramAudio::ChannelMixMode::TimeMean: // mean is already in both time signals
+                m_power = m_perLeft;
+                break;
             case JadeSpectrogramAudio::ChannelMixMode::AbsMean:
                 for (size_t kk = 0; kk < m_freqsize ; ++kk)
                 {
@@ -259,7 +262,7 @@ JadeSpectrogramGUI::JadeSpectrogramGUI(JadeSpectrogramAudioProcessor& p, juce::A
 :m_processor(p) ,m_apvts(apvts),
 m_internalImg(Image::RGB,1,1,true),
 m_internalHeight(1), m_recomputeAll(true),m_maxColorVal(g_maxColorVal),m_minColorVal(g_minColorVal),
-m_colorpalette(256,CColorPalette::PaletteName::kHot),m_maxDisplayFreq(20000.f),m_minDisplayFreq(1.f),
+m_colorpalette(256,CColorPalette::PaletteName::kPlasma),m_maxDisplayFreq(20000.f),m_minDisplayFreq(1.f),
 //somethingChanged(nullptr),
 m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 //,m_editor(editor)
@@ -335,7 +338,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_colorScheme.addItem("Viridis",5);
     m_colorScheme.addItem("Plasma",6);
     m_colorScheme.addItem("Jade",7);
-    m_colorScheme.setSelectedItemIndex(6,NotificationType::dontSendNotification);
+    m_colorScheme.setSelectedItemIndex(static_cast<int>(CColorPalette::PaletteName::kPlasma),NotificationType::dontSendNotification);
     m_colorScheme.setColour(juce::ComboBox::ColourIds::backgroundColourId,JadeTeal);
     m_colorScheme.onChange = [this](){m_recomputeAll = true; m_colorpalette.setColorScheme(static_cast<CColorPalette::PaletteName>(m_colorScheme.getSelectedItemIndex()));};
     addAndMakeVisible(m_colorScheme);
@@ -783,7 +786,8 @@ void JadeSpectrogramGUI::setLabelText(int x, int y)
         float freq = (1.0-float(y)/(float(h)-m_scaleFactor*g_menuHeight))*(m_maxDisplayFreq - m_minDisplayFreq)+m_minDisplayFreq;
         // recompute freq to freq index in the internal memory
         float fshalf = 0.5f*m_processor.m_algo.getSamplerate();
-        size_t freqindex  = static_cast<size_t> (m_internalHeight * freq / (fshalf));
+        size_t freqindex  = static_cast<size_t> ((m_internalHeight-1) * freq / fshalf + 0.5f);
+        freqindex = std::min(freqindex, m_internalHeight-1);
 
         // recompute the time index from display index
         float maxw = 0.8*w;
