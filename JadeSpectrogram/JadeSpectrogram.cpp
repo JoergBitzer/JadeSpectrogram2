@@ -111,6 +111,9 @@ void JadeSpectrogramAudio::switchFFTSize(size_t newFFTSize)
 int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer, juce::MidiBuffer &midiMessages, int NrOfBlocksSinceLastProcessBlock)
 {
     juce::ignoreUnused(midiMessages, NrOfBlocksSinceLastProcessBlock);
+    // read the GUI-controlled values once per block (consistent within the block)
+    const auto mixMode = m_mixMode.load(std::memory_order_relaxed);
+    const float fs = m_fs.load(std::memory_order_relaxed);
 
     size_t numSamples = static_cast<size_t>(buffer.getNumSamples());
     size_t numChannels = static_cast<size_t>(buffer.getNumChannels());
@@ -127,7 +130,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
             if (cc == 0)
                 m_timeInLeft[kk] = data[cc][kk];
             else if (cc == 1)
-                if (m_mixMode == JadeSpectrogramAudio::ChannelMixMode::TimeMean)
+                if (mixMode == JadeSpectrogramAudio::ChannelMixMode::TimeMean)
                 {   // compute the mean and use for both channels
                     m_timeInLeft[kk] += data[cc][kk];
                     m_timeInLeft[kk] /= 2.f;
@@ -144,7 +147,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     if (numChannels>1)
     {
         m_rightAnalyzers[m_activeAnalyzer].getPeriodogram(m_timeInRight, m_perRight);
-        switch (m_mixMode)
+        switch (mixMode)
         {
             case JadeSpectrogramAudio::ChannelMixMode::TimeMean: // mean is already in both time signals
                 m_power = m_perLeft;
@@ -182,10 +185,10 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     // convert to dB
     for (size_t kk = 0; kk < m_freqsize ; ++kk)
     {
-        m_power[kk] = 10.f*log10f(2.f*m_power[kk]/m_fs + g_minValForLogSpectrogram);
+        m_power[kk] = 10.f*log10f(2.f*m_power[kk]/fs + g_minValForLogSpectrogram);
     }
     // save into mem
-    if (!m_PauseMode)
+    if (!m_PauseMode.load(std::memory_order_relaxed))
         m_fifo.push(m_power);
 
     return 0;
@@ -254,7 +257,7 @@ void JadeSpectrogramAudio::setclosestFFTSize_ms(float fftsize_ms)
 
 size_t JadeSpectrogramAudio::getnextpowerof2(float fftsize_ms)
 {
-    float firstguessFFTSize = (fftsize_ms*0.001f*m_fs);
+    float firstguessFFTSize = (fftsize_ms*0.001f*m_fs.load());
     int nextpowerof2 = static_cast<int>(log(firstguessFFTSize)/log(2.f))+1;
     return static_cast<size_t>(pow(2.f,static_cast<float>(nextpowerof2)));
 }
@@ -379,8 +382,6 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
 
 void JadeSpectrogramGUI::paint(juce::Graphics &g)
 {
-    CriticalSection crit;
-    crit.enter();
 
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId).darker(0.2f));
 
@@ -502,15 +503,12 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     
     juce::String text2display = "V " + juce::String(PLUGIN_VERSION_MAJOR) + "." + juce::String(PLUGIN_VERSION_MINOR) + "." + juce::String(PLUGIN_VERSION_PATCH);
     g.drawFittedText (text2display, getLocalBounds(), juce::Justification::bottomLeft, 1);
-    crit.exit();    
 
 }
 
 void JadeSpectrogramGUI::resized()
 {
 	auto r = getLocalBounds();
-    CriticalSection crit;
-    crit.enter();
    
     // if you have to place several components, use scaleFactor
     int width = r.getWidth();
@@ -550,7 +548,6 @@ void JadeSpectrogramGUI::resized()
     x = static_cast<int>(m_scaleFactor*(g_SliderWidth + g_FreqMeter) + 0.6*w - m_scaleFactor*0.5*100);
     m_fftSizeCombo.setBounds(x, static_cast<int>(static_cast<float>(h)-m_scaleFactor*g_menuHeight+0.5f),static_cast<int>(m_scaleFactor*100),static_cast<int>(m_scaleFactor*g_ButtonHeight));
             
-    crit.exit();
 }
 
 void JadeSpectrogramGUI::timerCallback()
@@ -559,8 +556,6 @@ void JadeSpectrogramGUI::timerCallback()
     float minValColor = m_DisplayMinColorSlider.getValue();
 
     m_colorpalette.setValueRange(minValColor,maxValColor);
-    //CriticalSection crit;
-    //crit.enter();
 
     auto p = getMouseXYRelative();
 
@@ -724,7 +719,6 @@ void JadeSpectrogramGUI::timerCallback()
 
 
 
-    //crit.exit();
     repaint();
 }
 

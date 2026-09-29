@@ -60,7 +60,6 @@ private:
     // reports a changed latency (FFT size switch) to the host; setLatencySamples
     // notifies the host, so it is called here on the message thread, not on the audio thread
     void timerCallback() override;
-    CriticalSection m_protect;
     float m_fs; // sampling rate is always needed
 
     //Parameterhandling

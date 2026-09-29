@@ -89,14 +89,14 @@ public:
 	void setFFTSize(size_t newFFTSize){m_requestedFFTSize.store(newFFTSize);};
 	size_t getFFTSize() const {return m_requestedFFTSize.load();};
     void setclosestFFTSize_ms(float fftsize_ms);
-    void setPauseMode (bool mode){m_PauseMode = mode;};
+    void setPauseMode (bool mode){m_PauseMode.store(mode);};
     
     size_t getnextpowerof2(float fftsize_ms);
 
     size_t getSpectrumSize(){return m_publishedFreqSize.load();}; // spectrum size currently produced by the audio thread
-    float getSamplerate(){return m_fs;};
+    float getSamplerate(){return m_fs.load();};
 	void setWindowType(SpectrumAnalyzer::WindowType type){m_requestedWindow.store(type);};
-	void setChannelMixMode(ChannelMixMode mode){m_mixMode = mode;};
+	void setChannelMixMode(ChannelMixMode mode){m_mixMode.store(mode);};
 	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
 	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
 	bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
@@ -104,7 +104,7 @@ public:
 private:
 	JadeSpectrogramAudioProcessor* m_processor;
     std::atomic<int> m_Latency {0}; // written by the audio thread on an FFT size switch
-    float m_fs;
+    std::atomic<float> m_fs; // written in prepareToPlay, read by the GUI
     size_t m_channels;
 
 	size_t m_fftsize; // active FFT size, audio thread only
@@ -123,7 +123,7 @@ private:
 	std::vector<float> m_perRight;
 	std::vector<float> m_timeInLeft;
 	std::vector<float> m_timeInRight;
-    ChannelMixMode m_mixMode;
+    std::atomic<ChannelMixMode> m_mixMode; // GUI writes, audio thread reads
 	SpectrumAnalyzer::WindowType m_windowChoice; // active window, audio thread only
 
 	void applyPendingChanges(); // audio thread, realtime safe
@@ -135,7 +135,7 @@ private:
 	jade::AudioProcessParameter<float> m_DisplayMinColor;
 	jade::AudioProcessParameter<float> m_DisplayMaxColor;
 
-    bool m_PauseMode;	
+    std::atomic<bool> m_PauseMode; // GUI writes, audio thread reads
 };
 
 class JadeSpectrogramGUI : public juce::Component, public Timer

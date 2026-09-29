@@ -21,7 +21,8 @@
 // Version 2.1 (added directthrue option and changed CriticalSection to ScopedLock (RAII))
 // Version 2.2 (added ProcessingMode::Analyze: the audio passes unchanged and without delay,
 //              the synchron blocks are only analysed; prepareSynchronProcessing does not
-//              reallocate for smaller sizes; directthrue no longer runs the buffering too)
+//              reallocate for smaller sizes; directthrue no longer runs the buffering too;
+//              the midi buffer is reserved in prepareSynchronProcessing; unused lock removed)
 
 /* ToDO:
 1) rewrite as template class for double
@@ -79,7 +80,6 @@ public:
     ProcessingMode getProcessingMode() const {return m_mode;};
 private:
     ProcessingMode m_mode = ProcessingMode::Process;
-    CriticalSection m_protectBlock;
     int m_NrOfChannels;
     int m_OutBlockSize;
     int m_OutCounter;

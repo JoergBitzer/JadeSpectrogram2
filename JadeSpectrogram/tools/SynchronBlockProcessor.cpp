@@ -13,8 +13,6 @@ SynchronBlockProcessor::SynchronBlockProcessor()
 }
 void SynchronBlockProcessor::prepareSynchronProcessing(int channels, int desiredSize)
 {
-    //ScopedLock lock(m_protectBlock);
-    //m_protectBlock.enter();
     m_OutBlockSize = desiredSize;
     m_NrOfChannels = channels;
     // avoidReallocating: a smaller (or equal) size than ever before does not allocate
@@ -25,16 +23,15 @@ void SynchronBlockProcessor::prepareSynchronProcessing(int channels, int desired
     m_OutCounter = 0;
     m_InCounter = 0;
     m_mididata.clear();
+    m_mididata.ensureSize(4096); // bytes; addEvents in processBlock then normally does not allocate
     m_pastSamples = 0;
     if (desiredSize < 1)
         m_directthrue = true;
     else
         m_directthrue = false;
-    //m_protectBlock.exit();
 }
 void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages)
 {
-    //ScopedLock lock(m_protectBlock);
     int nrofBlockProcessed = 0;
     if (m_directthrue == true)
     {
@@ -42,7 +39,6 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
         return; // no buffering (m_block has no samples)
     }
     const bool analyzeOnly = (m_mode == ProcessingMode::Analyze);
-    // m_protectBlock.enter();
     auto readdatapointers = data.getArrayOfReadPointers();
     auto writedatapointers = data.getArrayOfWritePointers();
     int nrOfInputSamples = data.getNumSamples();
@@ -120,7 +116,6 @@ void SynchronBlockProcessor::processBlock(juce::AudioBuffer<float>& data, juce::
         m_mididata.addEvents(midiMessages,0,nrOfInputSamples,m_pastSamples);
         m_pastSamples += nrOfInputSamples;
     }
-    //m_protectBlock.exit();
 }
 
 int SynchronBlockProcessor::getDelay()
@@ -257,7 +252,6 @@ int WOLA::prepareWOLAprocessing(int channels, int desiredSize, WOLAType wolalapt
 int WOLA::processSynchronBlock(juce::AudioBuffer<float> &inBlock, juce::MidiBuffer &midiMessages, int NrOfBlocksSinceLastProcessBlock)
 {
     juce::ignoreUnused(NrOfBlocksSinceLastProcessBlock);
-    //m_protectBlock.enter();
     int nrOfChannels = inBlock.getNumChannels();
     
     for (auto kk = 0; kk < nrOfChannels; ++kk)
