@@ -8,6 +8,7 @@ name: Build and release
 on:
   push:
     tags: ['v*.*.*']
+    branches: ['feature/ci-auval'] # TEMPORARY: test build, remove again
   workflow_dispatch:
 
 env:
@@ -69,6 +70,23 @@ jobs:
       - name: Test with pluginval (macOS)
         if: runner.os == 'macOS'
         run: tools/run_pluginval.sh "$ARTEFACTS/VST3/$PRODUCT.vst3" 1
+
+      # auval: Apple's Audio Unit validation (what Logic/GarageBand check before loading an AU).
+      # The AU codes (type, subtype, manufacturer) are read from the built component.
+      - name: Test the AU with auval (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          component="$ARTEFACTS/AU/$PRODUCT.component"
+          codes=""
+          for key in type subtype manufacturer; do
+            codes="$codes $(plutil -extract AudioComponents.0.$key raw "$component/Contents/Info.plist")"
+          done
+          echo "AU codes:$codes"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true # make macOS find the new AU
+          auval -strict -v $codes | tee auval.log
+          grep -q "AU VALIDATION SUCCEEDED" auval.log
 
       - name: Test with pluginval (Windows)
         if: runner.os == 'Windows'
