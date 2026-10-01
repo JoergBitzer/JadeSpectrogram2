@@ -147,8 +147,10 @@ public:
         m_editor->selectAll();
         m_editor->onReturnKey = [this] { commitText(); };
         m_editor->onFocusLost = [this] { commitText(); };
-        m_editor->onEscapeKey = [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<DragValueBox>(this)]
-                                                                       { if (safe) safe->m_editor.reset(); }); };
+        // the editor must not be deleted inside its own callback (safe pointer made here, not in a
+        // nested lambda: MSVC does not resolve 'this' there)
+        juce::Component::SafePointer<DragValueBox> safe(this);
+        m_editor->onEscapeKey = [safe] { juce::MessageManager::callAsync([safe] { if (safe) safe->m_editor.reset(); }); };
         m_editor->grabKeyboardFocus();
     }
 
@@ -183,7 +185,8 @@ private:
         m_editor->onFocusLost = nullptr;
         const auto text = m_editor->getText().replaceCharacter(',', '.').trim();
         // the editor must not be deleted inside its own callback
-        juce::MessageManager::callAsync([safe = juce::Component::SafePointer<DragValueBox>(this)] { if (safe) safe->m_editor.reset(); });
+        juce::Component::SafePointer<DragValueBox> safe(this);
+        juce::MessageManager::callAsync([safe] { if (safe) safe->m_editor.reset(); });
         if (text.isNotEmpty())
             gesture(text.getDoubleValue());
     }
