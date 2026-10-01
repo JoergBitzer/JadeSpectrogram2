@@ -23,6 +23,7 @@ struct SliceInfo
     float barLengthPpq = 4.f;  // numerator * 4 / denominator
     float beatPpq = 1.f;       // 4 / denominator
     float bpm = 0.f;
+    long long endSample = 0;   // sample count (since prepareToPlay) at the end of the slice
 };
 
 class TwoDimBlockFreeFiFO

@@ -12,6 +12,7 @@
 #include "TwoDimBlockFreeFiFo.h"
 #include "CColorpalette.h"
 #include "IconButton.h"
+#include "DragValueBox.h"
 #include "RangeSlider.h"
 #include "JadeLookAndFeel.h"
 
@@ -73,6 +74,8 @@ namespace JadeParamID
     inline const juce::String keyboardOverlay {"KeyboardOverlay"}; // piano-roll bands over the spectrogram
     inline const juce::String bpmGrid {"BpmGrid"};             // vertical lines at bars, beats, subdivisions
     inline const juce::String bpmResolution {"BpmResolution"}; // 0: bars only, 1: 1/2, 2: 1/4, 3: 1/8, 4: 1/16 note
+    inline const juce::String tempoFree {"TempoFree"}; // BPM grid: false = synced to the host tempo, true = own tempo
+    inline const juce::String freeBpm {"FreeBpm"};     // tempo of the free grid (quarter notes per minute)
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -132,7 +135,17 @@ public:
 		double barStartPpq = 0.0;
 		int numerator = 4, denominator = 4;
 	};
-	void setHostPosition(const HostPosition& position){m_hostPosition = position;};
+	void setHostPosition(const HostPosition& position)
+	{
+		m_hostPosition = position;
+		// latest host tempo for the GUI, also while the transport is stopped or the display paused
+		m_hostBpm.store(position.hasPpq && position.bpm > 0.0 ? static_cast<float>(position.bpm) : 0.f, std::memory_order_relaxed);
+		m_hostNumerator.store(position.numerator, std::memory_order_relaxed);
+		m_hostDenominator.store(position.denominator, std::memory_order_relaxed);
+	};
+	float getHostBpm() const { return m_hostBpm.load(std::memory_order_relaxed); } // 0: no host tempo
+	int getHostNumerator() const { return m_hostNumerator.load(std::memory_order_relaxed); }
+	int getHostDenominator() const { return m_hostDenominator.load(std::memory_order_relaxed); }
 	// GUI side of the FIFO: size of the next slice (0: nothing to read) and the slice itself
 	size_t getNextMemSliceSize() const { return m_fifo.getNextSliceSize(); };
 	SliceInfo getNextMemSliceInfo() const { return m_fifo.getNextSliceInfo(); };
@@ -178,6 +191,8 @@ private:
 	std::vector<float> m_averagedPower;
 	// host position and sample counters: the beat position of each slice's end
 	HostPosition m_hostPosition;
+	std::atomic<float> m_hostBpm {0.f};
+	std::atomic<int> m_hostNumerator {4}, m_hostDenominator {4};
 	juce::int64 m_samplesFed = 0;       // samples given to processBlock so far
 	juce::int64 m_blockStartSample = 0; // m_samplesFed at the start of the current host block
 	juce::int64 m_sliceEndSample = 0;   // end of the last complete slice
@@ -287,12 +302,24 @@ private:
     IconButton m_bpmButton;
     ComboBox m_bpmResolutionCombo;
     std::unique_ptr<AudioProcessorValueTreeState::ComboBoxAttachment> m_bpmResolutionAttachment;
-    Label m_bpmLabel;
+    DragValueBox m_bpmValue; // host tempo (synced) or the tempo of the free grid (editable)
+    IconButton m_tempoSyncButton; // chain: synced to the host, broken chain: free tempo
+    bool m_tempoFree = false;
+    double m_freeBpm = 120.0;
+    juce::int64 m_freeAnchorSample = 0; // a bar line of the free grid (sample count of the slices)
+    int m_freeNumerator = 4, m_freeDenominator = 4;
+    void tempoSyncClicked();
+    void anchorFreeGrid(); // continue the host grid (last bar line), or start at the newest column
+    bool sampleAtX(float x, juce::int64& sample) const; // sample count at x in the display
+    void mouseDown(const MouseEvent& event) override; // Alt+click: bar line of the free grid here
     bool m_bpmGrid = false;
     bool m_titleBarVisible = true;
-    struct ColumnBeat { bool has = false; double ppq = 0.0; double barStart = 0.0; float barLen = 4.f; float beatLen = 1.f; float bpm = 0.f; };
+    struct ColumnBeat { bool has = false; double ppq = 0.0; double barStart = 0.0; float barLen = 4.f; float beatLen = 1.f; float bpm = 0.f;
+                        juce::int64 endSample = -1; }; // -1: column not written yet
+    ColumnBeat m_newestColumn; // the last written column
+    ColumnBeat beatOfColumn(size_t memoryColumn) const; // host position, or the free grid position
     std::vector<ColumnBeat> m_columnBeat; // beat position of each memory column (like m_displaymem)
-    SliceInfo m_lastSliceInfo;            // of the newest slice: BPM value in the title bar
+    SliceInfo m_lastSliceInfo;            // of the newest slice
     void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const;
     void updateBpmLabel();
     IconButton m_exportButton;

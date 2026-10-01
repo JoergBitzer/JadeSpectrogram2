@@ -239,6 +239,7 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
     {
         SliceInfo info;
         info.hop = numSamples;
+        info.endSample = m_sliceEndSample;
         if (m_hostPosition.hasPpq && m_hostPosition.bpm > 0.0)
         {
             // position at the end of this slice: host position at the block start plus the samples since then
@@ -329,6 +330,11 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::bpmGrid, "BPM grid", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::bpmResolution, "BPM grid resolution",
         StringArray{"1 bar", "1/2 note", "1/4 note", "1/8 note", "1/16 note"}, 2, choice));
+    paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::tempoFree, "BPM grid free tempo", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::freeBpm, "BPM grid free tempo value",
+        NormalisableRange<float>(20.f, 300.f, 0.1f), 120.f,
+        AudioParameterFloatAttributes().withAutomatable(false).withLabel("BPM")
+            .withStringFromValueFunction([](float v, int) { return String(v, 1) + " BPM"; })));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
     const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
@@ -493,8 +499,46 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_bpmResolutionCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId, JadeTeal);
     m_bpmResolutionCombo.setTooltip("Grid resolution: bars only, or every 1/2, 1/4, 1/8 or 1/16 note");
     m_bpmResolutionAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::bpmResolution, m_bpmResolutionCombo);
-    m_bpmLabel.setJustificationType(juce::Justification::centredLeft);
-    m_bpmLabel.setColour(juce::Label::textColourId, JadeGray);
+    m_bpmValue.setTextColour(JadeGray);
+    m_bpmValue.setRange(20.0, 300.0, 0.1);
+    m_bpmValue.setDragSteps(0.25, 0.02); // per pixel; Shift: fine
+    m_bpmValue.setTooltip("Tempo of the BPM grid. Free: drag up/down (Shift: fine), mouse wheel or double-click to type; "
+                          "Alt+click in the display puts a bar line there");
+    m_bpmValue.onDragStart = [this] { if (auto* param = m_apvts.getParameter(JadeParamID::freeBpm)) param->beginChangeGesture(); };
+    m_bpmValue.onValueChange = [this]
+    {
+        if (auto* param = dynamic_cast<juce::RangedAudioParameter*>(m_apvts.getParameter(JadeParamID::freeBpm)))
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(m_bpmValue.getValue())));
+        m_freeBpm = m_bpmValue.getValue();
+        updateBpmLabel();
+        repaint();
+    };
+    m_bpmValue.onDragEnd = [this] { if (auto* param = m_apvts.getParameter(JadeParamID::freeBpm)) param->endChangeGesture(); };
+    // sync / free: a closed chain (synced to the host tempo) or a broken chain (own tempo)
+    m_tempoSyncButton.drawIcon = [this](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = r.withSizeKeepingCentre(r.getWidth()*1.3f, r.getHeight()*1.3f);
+        const float w = r.getWidth(), h = r.getHeight();
+        const float linkW = 0.56f*w, linkH = 0.3f*h, gap = m_tempoFree ? 0.12f*w : 0.f;
+        g.setColour(c);
+        juce::Graphics::ScopedSaveState state(g);
+        g.addTransform(juce::AffineTransform::rotation(-juce::MathConstants<float>::pi/4.f, r.getCentreX(), r.getCentreY()));
+        const float cy = r.getCentreY() - 0.5f*linkH;
+        // two links overlapping by a third (closed chain), or pulled apart (broken chain)
+        const float overlap = m_tempoFree ? -gap : 0.3f*linkW;
+        const float x0 = r.getCentreX() - linkW + 0.5f*overlap;
+        g.drawRoundedRectangle(x0, cy, linkW, linkH, 0.5f*linkH, 1.4f);
+        g.drawRoundedRectangle(x0 + linkW - overlap, cy, linkW, linkH, 0.5f*linkH, 1.4f);
+        if (m_tempoFree)
+        {
+            // small sparks at the break
+            const float bx = r.getCentreX(), by = r.getCentreY();
+            g.drawLine(bx, by - 0.75f*linkH, bx, by - 1.15f*linkH, 1.f);
+            g.drawLine(bx, by + 0.75f*linkH, bx, by + 1.15f*linkH, 1.f);
+        }
+    };
+    m_tempoSyncButton.setTooltip("BPM grid tempo: synced to the host (chain) or free (broken chain, set the tempo yourself)");
+    m_tempoSyncButton.onClick = [this](){ tempoSyncClicked(); };
     // export button: an arrow down into a tray
     m_exportButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
     {
@@ -810,7 +854,8 @@ void JadeSpectrogramGUI::timerCallback()
         {
             m_displaymem[m_displaymem_writepos] = m_exchangeSpectrum;
             m_columnBeat[m_displaymem_writepos] = {sliceInfo.hasPpq, sliceInfo.ppq, sliceInfo.barStartPpq,
-                                                   sliceInfo.barLengthPpq, sliceInfo.beatPpq, sliceInfo.bpm};
+                                                   sliceInfo.barLengthPpq, sliceInfo.beatPpq, sliceInfo.bpm, sliceInfo.endSample};
+            m_newestColumn = m_columnBeat[m_displaymem_writepos];
             m_lastSliceInfo = sliceInfo;
             // write into Bitmap
             if (m_isRunningDisplay)
@@ -1025,6 +1070,16 @@ void JadeSpectrogramGUI::syncFromParameters()
         m_bpmButton.setToggleState(grid, NotificationType::dontSendNotification);
         setTitleBarVisible(m_titleBarVisible); // resolution box and BPM value only with the grid
     }
+    m_freeBpm = static_cast<double>(m_apvts.getRawParameterValue(JadeParamID::freeBpm)->load());
+    const bool tempoFree = m_apvts.getRawParameterValue(JadeParamID::tempoFree)->load() > 0.5f;
+    if (tempoFree != m_tempoFree)
+    {
+        m_tempoFree = tempoFree;
+        if (tempoFree)
+            anchorFreeGrid();
+        m_bpmValue.setEditable(tempoFree);
+        m_tempoSyncButton.repaint();
+    }
     const bool keys = m_apvts.getRawParameterValue(JadeParamID::keyboardOverlay)->load() > 0.5f;
     if (keys != m_keyboardOverlay || keys != m_keyboardButton.getToggleState())
     {
@@ -1162,7 +1217,7 @@ float JadeSpectrogramGUI::timeSpan() const
 
 std::vector<juce::Component*> JadeSpectrogramGUI::getTitleBarControls()
 {
-    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel};
+    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_tempoSyncButton, &m_bpmValue};
 }
 
 void JadeSpectrogramGUI::setTitleBarBounds(float s)
@@ -1171,12 +1226,13 @@ void JadeSpectrogramGUI::setTitleBarBounds(float s)
     const int y = sc(g_spec_y - 25), h = sc(g_ButtonHeight);
     // lin/log above the frequency axis labels, the others right of the title image (500 px from g_spec_x + 60)
     m_freqAxisButton.setBounds(sc(g_spec_x + g_SliderWidth), y, sc(g_FreqMeter), h);
-    float x = static_cast<float>(g_spec_x + 60 + 500 + 5);
-    m_keyboardButton.setBounds(sc(x), y, sc(28), h);       x += 31.f;
-    m_bpmButton.setBounds(sc(x), y, sc(28), h);            x += 31.f;
-    m_bpmResolutionCombo.setBounds(sc(x), y, sc(62), h);   x += 65.f;
-    m_bpmLabel.setBounds(sc(x), y, sc(60), h);             // up to the logo (g_spec_x + g_spec_width - 68)
-    m_bpmLabel.setFont(juce::FontOptions(11.f*s));
+    float x = static_cast<float>(g_spec_x + 60 + 500 - 15);
+    m_keyboardButton.setBounds(sc(x), y, sc(26), h);       x += 29.f;
+    m_bpmButton.setBounds(sc(x), y, sc(26), h);            x += 29.f;
+    m_bpmResolutionCombo.setBounds(sc(x), y, sc(58), h);   x += 61.f;
+    m_tempoSyncButton.setBounds(sc(x), y, sc(26), h);      x += 29.f;
+    m_bpmValue.setBounds(sc(x), y, sc(66), h);             // up to the logo (g_spec_x + g_spec_width - 68)
+    m_bpmValue.setFont(juce::FontOptions(11.f*s));
 }
 
 void JadeSpectrogramGUI::resetViewClicked()
@@ -1193,7 +1249,8 @@ void JadeSpectrogramGUI::setTitleBarVisible(bool visible)
     m_keyboardButton.setVisible(visible);
     m_bpmButton.setVisible(visible);
     m_bpmResolutionCombo.setVisible(visible && m_bpmGrid); // only with the grid
-    m_bpmLabel.setVisible(visible && m_bpmGrid);
+    m_tempoSyncButton.setVisible(visible && m_bpmGrid);
+    m_bpmValue.setVisible(visible && m_bpmGrid);
 }
 
 juce::Image JadeSpectrogramGUI::renderExportImage(float resolutionScale)
@@ -1244,17 +1301,109 @@ void JadeSpectrogramGUI::exportClicked()
 
 void JadeSpectrogramGUI::updateBpmLabel()
 {
+    // synced: the latest host tempo (read in every audio block, so it follows the host also while
+    // the transport is stopped or the display is paused); free: the own tempo
     if (!m_bpmGrid)
         return;
     String text = "no tempo";
-    if (m_lastSliceInfo.hasPpq && m_lastSliceInfo.bpm > 0.f)
+    const double bpm = m_tempoFree ? m_freeBpm : static_cast<double>(m_processor.m_algo.getHostBpm());
+    if (bpm > 0.0)
     {
-        const float bpm = m_lastSliceInfo.bpm;
-        const bool whole = std::abs(bpm - std::round(bpm)) < 0.05f;
+        const bool whole = std::abs(bpm - std::round(bpm)) < 0.05;
         text = (whole ? String(juce::roundToInt(bpm)) : String(bpm, 1)) + " BPM";
+        m_bpmValue.setValue(bpm);
     }
-    if (m_bpmLabel.getText() != text)
-        m_bpmLabel.setText(text, NotificationType::dontSendNotification);
+    m_bpmValue.setText(text);
+    if (const int num = m_processor.m_algo.getHostNumerator(), den = m_processor.m_algo.getHostDenominator(); num > 0 && den > 0)
+    {
+        m_freeNumerator = num; // the free grid keeps the last time signature of the host
+        m_freeDenominator = den;
+    }
+}
+
+void JadeSpectrogramGUI::tempoSyncClicked()
+{
+    // to free: start with the current host tempo (if there is one), the grid continues the host grid
+    if (!m_tempoFree)
+    {
+        const float hostBpm = m_processor.m_algo.getHostBpm();
+        if (hostBpm > 0.f)
+            setFloatParameter(JadeParamID::freeBpm, hostBpm);
+    }
+    setBoolParameter(JadeParamID::tempoFree, !m_tempoFree);
+    syncFromParameters();
+    updateBpmLabel();
+    repaint();
+}
+
+void JadeSpectrogramGUI::anchorFreeGrid()
+{
+    // a bar line of the free grid: the last bar line of the host grid before the newest column
+    // (with the host tempo of that column), so the free grid continues it without a jump;
+    // without host position the newest column
+    const ColumnBeat& c = m_newestColumn;
+    if (c.endSample < 0)
+    {
+        m_freeAnchorSample = 0;
+        return;
+    }
+    m_freeAnchorSample = c.endSample;
+    if (c.has && c.bpm > 0.f && c.barLen > 0.f)
+    {
+        double inBar = std::fmod(c.ppq - c.barStart, static_cast<double>(c.barLen));
+        if (inBar < 0.0)
+            inBar += static_cast<double>(c.barLen);
+        const double samplesPerQuarter = 60.0*static_cast<double>(m_processor.m_algo.getSamplerate())/static_cast<double>(c.bpm);
+        m_freeAnchorSample = c.endSample - static_cast<juce::int64>(std::llround(inBar*samplesPerQuarter));
+    }
+}
+
+JadeSpectrogramGUI::ColumnBeat JadeSpectrogramGUI::beatOfColumn(size_t memoryColumn) const
+{
+    const ColumnBeat& c = m_columnBeat[memoryColumn];
+    if (!m_tempoFree)
+        return c;
+    // free grid: the position from the column's time, bar lines at the anchor + k bars
+    ColumnBeat f;
+    f.endSample = c.endSample;
+    f.has = c.endSample >= 0 && m_freeBpm > 0.0;
+    f.bpm = static_cast<float>(m_freeBpm);
+    f.beatLen = 4.f/static_cast<float>(m_freeDenominator);
+    f.barLen = static_cast<float>(m_freeNumerator)*f.beatLen;
+    f.barStart = 0.0;
+    f.ppq = static_cast<double>(c.endSample - m_freeAnchorSample)*m_freeBpm/(60.0*static_cast<double>(m_processor.m_algo.getSamplerate()));
+    return f;
+}
+
+bool JadeSpectrogramGUI::sampleAtX(float px, juce::int64& sample) const
+{
+    // inverse of the column positions of drawBeatGrid: the end of column ww is at (ww + 1)/W
+    const size_t W = m_internalWidth;
+    const auto display = displayArea();
+    if (W < 2 || m_columnBeat.size() != W || display.getWidth() <= 0)
+        return false;
+    const float span = m_timeEnd - m_timeStart;
+    const float frac = m_timeStart + (px - static_cast<float>(display.getX()))/static_cast<float>(display.getWidth())*span;
+    const float col = juce::jlimit(0.f, static_cast<float>(W) - 1.001f, frac*static_cast<float>(W) - 1.f);
+    const size_t w0 = static_cast<size_t>(col);
+    auto memColumn = [&](size_t ww) { return m_isRunningDisplay ? ww : (m_displaymem_writepos + ww) % W; };
+    const juce::int64 s0 = m_columnBeat[memColumn(w0)].endSample, s1 = m_columnBeat[memColumn(w0 + 1)].endSample;
+    if (s0 < 0 || s1 < 0)
+        return false;
+    sample = s0 + static_cast<juce::int64>(std::llround(static_cast<double>(col - static_cast<float>(w0))*static_cast<double>(s1 - s0)));
+    return true;
+}
+
+void JadeSpectrogramGUI::mouseDown(const MouseEvent& event)
+{
+    // Alt+click in the display: a bar line of the free grid at this time
+    juce::int64 sample = 0;
+    if (m_bpmGrid && m_tempoFree && event.mods.isAltDown() && displayArea().contains(event.getPosition())
+        && sampleAtX(event.position.x, sample))
+    {
+        m_freeAnchorSample = sample;
+        repaint();
+    }
 }
 
 void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const
@@ -1286,8 +1435,8 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
     const float top = static_cast<float>(display.getY()), bottom = static_cast<float>(display.getBottom());
     for (size_t ww = w0; ww <= w1; ++ww)
     {
-        const ColumnBeat& a = m_columnBeat[memColumn(ww - 1)];
-        const ColumnBeat& b = m_columnBeat[memColumn(ww)];
+        const ColumnBeat a = beatOfColumn(memColumn(ww - 1));
+        const ColumnBeat b = beatOfColumn(memColumn(ww));
         if (!a.has || !b.has || !(b.ppq > a.ppq) || b.bpm <= 0.f)
             continue;
         // expected advance per column; much more means a jump
