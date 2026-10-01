@@ -282,6 +282,16 @@ private:
     void mouseExit(const MouseEvent &event) override;
     bool setLabelText(int x, int y); // true if (x, y) is inside the analysis display
     void drawCrosshair(juce::Graphics& g, juce::Rectangle<int> display);
+    void modifierKeysChanged(const ModifierKeys& modifiers) override; // Shift: harmonic cursor
+    String noteText(double freq) const; // e.g. "A4 +4 ct" (reference pitch, overlay rounding)
+    // strongest maximum in the note band of the mouse (at least +-1 bin) of the column under the
+    // mouse, parabolic interpolation; second readout line and a dot at its position
+    bool m_peakValid = false;
+    float m_peakFreq = 0.f, m_peakLevel = 0.f;
+    String m_peakText;
+    float m_mouseFreq = 0.f;
+    bool m_showHarmonics = false; // Shift held: lines at the harmonics of the peak (or the mouse frequency)
+    void drawHarmonics(juce::Graphics& g, juce::Rectangle<int> display) const;
     juce::Point<int> m_mousePos;
 
     // Frequency axis and image layout (m_axisMap):

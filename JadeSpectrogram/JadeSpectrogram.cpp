@@ -1032,6 +1032,8 @@ void JadeSpectrogramGUI::timerCallback()
 
 
 
+    if (m_mouseInDisplay) // Shift without a modifier event (e.g. pressed while another window had the focus)
+        m_showHarmonics = juce::ModifierKeys::currentModifiers.isShiftDown();
     repaint();
 }
 
@@ -1151,14 +1153,26 @@ void JadeSpectrogramGUI::pauseClicked()
 void JadeSpectrogramGUI::mouseMove (const MouseEvent& event)
 {
     m_mousePos = event.getPosition();
+    m_showHarmonics = event.mods.isShiftDown();
     m_mouseInDisplay = setLabelText(m_mousePos.getX(), m_mousePos.getY());
     repaint();
+}
+
+void JadeSpectrogramGUI::modifierKeysChanged(const ModifierKeys& modifiers)
+{
+    // Shift pressed or released without moving the mouse
+    if (modifiers.isShiftDown() != m_showHarmonics)
+    {
+        m_showHarmonics = modifiers.isShiftDown();
+        repaint();
+    }
 }
 
 void JadeSpectrogramGUI::mouseExit (const MouseEvent& event)
 {
     juce::ignoreUnused(event);
     m_mouseInDisplay = false;
+    m_peakValid = false;
     repaint();
 }
 
@@ -1813,13 +1827,32 @@ void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> d
     g.setColour(juce::Colours::white.withAlpha(0.7f));
     g.drawLine(static_cast<float>(display.getX()), y, static_cast<float>(display.getRight()), y, 1.0f);
     g.drawLine(x, static_cast<float>(display.getY()), x, static_cast<float>(display.getBottom()), 1.0f);
+    if (m_showHarmonics)
+        drawHarmonics(g, display);
+    // the peak of the second readout line: a small white dot with a dark rim
+    if (m_peakValid)
+    {
+        const float py = static_cast<float>(display.getY()) + frequencyToY(m_peakFreq, static_cast<float>(display.getHeight()));
+        if (py >= static_cast<float>(display.getY()) && py <= static_cast<float>(display.getBottom()))
+        {
+            const float rDot = 3.f*m_scaleFactor;
+            g.setColour(juce::Colours::black.withAlpha(0.6f));
+            g.fillEllipse(x - rDot - 1.f, py - rDot - 1.f, 2.f*rDot + 2.f, 2.f*rDot + 2.f);
+            g.setColour(juce::Colours::white.withAlpha(0.85f));
+            g.fillEllipse(x - rDot, py - rDot, 2.f*rDot, 2.f*rDot);
+        }
+    }
 
-    // readout (the same text as below the display) next to the cursor,
+    // readout next to the cursor (mouse position; second line: the marked peak),
     // on the other side of the cursor near the right and bottom edges
     const juce::String text = m_readoutText;
     const juce::Font font(juce::FontOptions(13.0f*m_scaleFactor));
-    const int textW = juce::GlyphArrangement::getStringWidthInt(font, text) + static_cast<int>(10.0f*m_scaleFactor);
-    const int textH = static_cast<int>(18.0f*m_scaleFactor);
+    const int lines = m_peakValid ? 2 : 1;
+    const int textW = juce::jmax(juce::GlyphArrangement::getStringWidthInt(font, text),
+                                 m_peakValid ? juce::GlyphArrangement::getStringWidthInt(font, m_peakText) : 0)
+                      + static_cast<int>(10.0f*m_scaleFactor);
+    const int lineH = static_cast<int>(16.0f*m_scaleFactor);
+    const int textH = lines*lineH + static_cast<int>(2.0f*m_scaleFactor);
     const int gap = static_cast<int>(10.0f*m_scaleFactor);
     juce::Rectangle<int> box(m_mousePos.getX() + gap, m_mousePos.getY() + gap, textW, textH);
     if (box.getRight() > display.getRight())
@@ -1831,7 +1864,61 @@ void JadeSpectrogramGUI::drawCrosshair(juce::Graphics& g, juce::Rectangle<int> d
     g.fillRoundedRectangle(box.toFloat(), 3.0f*m_scaleFactor);
     g.setColour(juce::Colours::white);
     g.setFont(font);
-    g.drawText(text, box, juce::Justification::centred, false);
+    auto textArea = box.reduced(static_cast<int>(5.0f*m_scaleFactor), static_cast<int>(1.0f*m_scaleFactor));
+    g.drawText(text, textArea.removeFromTop(lineH), juce::Justification::centredLeft, false);
+    if (m_peakValid)
+        g.drawText(m_peakText, textArea.removeFromTop(lineH), juce::Justification::centredLeft, false);
+}
+
+void JadeSpectrogramGUI::drawHarmonics(juce::Graphics& g, juce::Rectangle<int> display) const
+{
+    // dashed lines across the display at 2 f0, 3 f0, ... (f0: the marked peak, else the mouse
+    // frequency), numbered next to the vertical crosshair line; stops where the lines come closer
+    // than 4 px
+    const float f0 = m_peakValid ? m_peakFreq : m_mouseFreq;
+    if (f0 <= 0.f)
+        return;
+    const float H = static_cast<float>(display.getHeight()), top = static_cast<float>(display.getY());
+    const float fmax = yToFrequency(0.f, H);
+    const float left = static_cast<float>(display.getX()), right = static_cast<float>(display.getRight());
+    const float dashes[] = {4.f*m_scaleFactor, 3.f*m_scaleFactor};
+    g.setFont(juce::FontOptions(10.f*m_scaleFactor));
+    float lastY = top + frequencyToY(f0, H);
+    float lastLabelY = lastY;
+    const float labelH = 10.f*m_scaleFactor;
+    for (int k = 2; static_cast<float>(k)*f0 <= fmax; ++k)
+    {
+        const float yk = top + frequencyToY(static_cast<float>(k)*f0, H);
+        if (std::abs(lastY - yk) < 4.f) // on the log axis the spacing only shrinks with k
+            break;
+        lastY = yk;
+        if (yk > top + H)
+            continue;
+        const float ySnap = std::floor(yk) + 0.5f; // crisp line of the same intensity everywhere (error < 0.5 px)
+        g.setColour(juce::Colours::white.withAlpha(0.45f));
+        g.drawDashedLine(juce::Line<float>(left, ySnap, right, ySnap), dashes, 2, 1.f);
+        g.setColour(juce::Colours::white.withAlpha(0.8f));
+        // number right of the crosshair line (left of it near the right edge); only where it does
+        // not overlap the previous number
+        if (std::abs(lastLabelY - yk) < labelH)
+            continue;
+        lastLabelY = yk;
+        const float mx = static_cast<float>(m_mousePos.getX()), labelW = 16.f*m_scaleFactor;
+        const float lx = mx + 3.f + labelW <= right ? mx + 3.f : mx - 3.f - labelW;
+        g.drawText(String(k), juce::Rectangle<float>(lx, ySnap - labelH - 0.5f, labelW, labelH),
+                   mx + 3.f + labelW <= right ? juce::Justification::bottomLeft : juce::Justification::bottomRight, false);
+    }
+}
+
+String JadeSpectrogramGUI::noteText(double freq) const
+{
+    // note and deviation in cents from the reference pitch (A4); the same rounding as the band
+    // boundaries of the keyboard overlay
+    const double semitones = 12.0*std::log2(freq/m_refPitch) + 69.0;
+    const int midinotenumber = static_cast<int>(std::floor(semitones + 0.5));
+    const int cents = juce::roundToInt(100.0*(semitones - static_cast<double>(midinotenumber)));
+    const String sign = cents > 0 ? String("+") : (cents < 0 ? String("-") : String(CharPointer_UTF8("\xc2\xb1"))); // plus-minus at 0
+    return MidiMessage::getMidiNoteName(midinotenumber, true, true, 4) + " " + sign + String(std::abs(cents)) + " ct";
 }
 
 bool JadeSpectrogramGUI::setLabelText(int x, int y)
@@ -1872,16 +1959,41 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
         if (m_axisMap != AxisMap::Bins)
             val = rowValue(m_displaymem.at(column), imageRow);
 
-        // note and deviation in cents from the reference pitch (A4); the same rounding as the
-        // band boundaries of the keyboard overlay
-        const double semitones = 12.0*std::log2(static_cast<double>(freq)/m_refPitch) + 69.0;
-        const int midinotenumber = static_cast<int>(std::floor(semitones + 0.5));
-        const int cents = juce::roundToInt(100.0*(semitones - static_cast<double>(midinotenumber)));
-        const String midiNoteName = MidiMessage::getMidiNoteName(midinotenumber, true, true, 4);
-        const String sign = cents > 0 ? String("+") : (cents < 0 ? String("-") : String(CharPointer_UTF8("\xc2\xb1"))); // plus-minus at 0
-        const String centText = sign + String(std::abs(cents)) + " ct";
+        m_mouseFreq = freq;
+        m_readoutText = String(int(freq+0.5)) + String(" Hz | ") + noteText(freq) + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB");
 
-        m_readoutText = String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + " " + centText + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB");
+        // peak: the strongest bin in the note band of the mouse (+-50 ct, at least +-1 bin) of this
+        // column; only a real maximum inside the range (not at its edge) and inside the colour range
+        m_peakValid = false;
+        const auto& spectrum = m_displaymem.at(column);
+        const size_t nBins = spectrum.size();
+        const float binWidth = fshalf/static_cast<float>(nBins - 1);
+        const float quarterTone = std::pow(2.f, 1.f/24.f);
+        if (nBins >= 5 && freq > 0.f)
+        {
+            const long kc = std::lround(freq/binWidth);
+            long k0 = std::min(static_cast<long>(std::floor(freq/quarterTone/binWidth)), kc - 1);
+            long k1 = std::max(static_cast<long>(std::ceil(freq*quarterTone/binWidth)), kc + 1);
+            k0 = juce::jlimit(0L, static_cast<long>(nBins) - 1, k0);
+            k1 = juce::jlimit(0L, static_cast<long>(nBins) - 1, k1);
+            long kmax = k0;
+            for (long k = k0; k <= k1; ++k)
+                if (spectrum[static_cast<size_t>(k)] > spectrum[static_cast<size_t>(kmax)])
+                    kmax = k;
+            if (kmax > k0 && kmax < k1)
+            {
+                const float a = spectrum[static_cast<size_t>(kmax - 1)], b = spectrum[static_cast<size_t>(kmax)], c = spectrum[static_cast<size_t>(kmax + 1)];
+                const float colourMin = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
+                if (b > a && b > c && b >= colourMin)
+                {
+                    const float p = 0.5f*(a - c)/(a - 2.f*b + c); // -0.5 ... 0.5 bins
+                    m_peakFreq = (static_cast<float>(kmax) + p)*binWidth;
+                    m_peakLevel = b - 0.25f*(a - c)*p;
+                    m_peakValid = true;
+                    m_peakText = "peak " + String(m_peakFreq, 1) + " Hz | " + noteText(m_peakFreq) + " | " + String(m_peakLevel, 1) + " dB";
+                }
+            }
+        }
         return true;
     }
     return false;

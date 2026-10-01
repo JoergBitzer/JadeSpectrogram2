@@ -205,3 +205,28 @@ final layout below is the target.
   sweep time in Fix mode: 0 s at the left edge ... 10 s at the right, labels stay still,
   the cursor shows the current sweep position; Scroll mode keeps -10 s ... 0 s
   (see decision 8). Confirmed.
+
+## Future ideas (after 2.4, "the musical spectrogram")
+
+Collected in October 2026 after 2.3.0. 2.4.0 implements the peak readout and the harmonic
+cursor; the rest is open, roughly in the order of value per effort.
+
+- **Interval readout**: click to set a reference point; the crosshair then shows the
+  interval to it in cents with its name and the time difference in beats
+  (e.g. `+702 ct (fifth) · 1.5 beats`). Melodies, vibrato depth, glissandi.
+- **Musical time in the readout**: with the BPM grid on, bar and beat at the mouse
+  (e.g. `bar 12 · 3.25`), for timing analysis ("the snare is a 32nd late").
+- **Scale highlighting**: key and scale (major, minor, modes, pentatonic, ...); the keyboard
+  overlay brightens the scale notes and dims the others.
+- **Note names on the frequency axis**: piano keys with C labels on the log axis, next to or
+  instead of Hz, without covering the spectrogram.
+- **Chroma strip**: the energy of each column folded onto the 12 pitch classes, as a narrow
+  strip (zoom strip area or next to the colour bar); shows key and chord changes.
+- **Tempo suggestion for the free grid**: onset detection (spectral flux) in the visible part,
+  suggested BPM and bar line, one click to apply, then fine-tune with the drag box and Alt+click.
+- **Other tunings**: just intonation, Pythagorean, meantone relative to a key; overlay bands
+  and cents follow them. Early music, teaching.
+- **MIDI overlay**: incoming MIDI notes drawn as piano-roll bars over the spectrogram (needs a
+  MIDI input bus; some hosts treat such plugins differently).
+- **Constant-Q view**: constant resolution per semitone (sharp bass, fast treble); a new
+  analysis path, probably a release of its own.
