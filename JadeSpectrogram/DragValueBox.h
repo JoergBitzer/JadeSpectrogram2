@@ -5,7 +5,8 @@
 // A number display that can be changed with the mouse, like the tempo field of a DAW: drag up/down
 // (Shift: fine steps), mouse wheel, or double-click to type a value. While editable it shows two
 // small triangles on the right and highlights on hover; while not editable it is a plain text
-// display (setText). onDragStart / onValueChange / onDragEnd frame the changes of one gesture; a
+// display (setText). Optional icon at the left (drawIcon, e.g. a symbol for what the value is).
+// onDragStart / onValueChange / onDragEnd frame the changes of one gesture; a
 // wheel step or a typed value is one gesture of its own (start, change, end).
 class DragValueBox : public juce::Component, public juce::SettableTooltipClient
 {
@@ -50,6 +51,8 @@ public:
     void setTextColour(juce::Colour c) { m_textColour = c; repaint(); }
 
     std::function<void()> onDragStart, onValueChange, onDragEnd;
+    // optional icon left of the text: area (square, the height of the box) and text colour
+    std::function<void(juce::Graphics&, juce::Rectangle<float>, juce::Colour)> drawIcon;
 
     void paint(juce::Graphics& g) override
     {
@@ -59,7 +62,13 @@ public:
             g.setColour(m_textColour.withAlpha(0.15f));
             g.fillRoundedRectangle(r, 3.f);
         }
-        float textRight = r.getRight();
+        float textRight = r.getRight(), textLeft = r.getX() + 2.f;
+        if (drawIcon)
+        {
+            const float size = r.getHeight();
+            drawIcon(g, juce::Rectangle<float>(r.getX(), r.getY(), size, size).reduced(0.15f*size), m_textColour);
+            textLeft = r.getX() + 0.85f*size;
+        }
         if (m_editable)
         {
             // two small triangles on the right: up and down
@@ -73,7 +82,7 @@ public:
         }
         g.setColour(m_textColour);
         g.setFont(m_font);
-        g.drawText(m_text, r.withRight(textRight).withTrimmedLeft(2.f), juce::Justification::centredLeft, false);
+        g.drawText(m_text, r.withRight(textRight).withLeft(textLeft), juce::Justification::centredLeft, false);
     }
 
     void mouseDown(const juce::MouseEvent& e) override

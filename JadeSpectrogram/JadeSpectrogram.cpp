@@ -331,6 +331,10 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::bpmResolution, "BPM grid resolution",
         StringArray{"1 bar", "1/2 note", "1/4 note", "1/8 note", "1/16 note"}, 2, choice));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::tempoFree, "BPM grid free tempo", false, boolean));
+    paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::refPitch, "Reference pitch A4",
+        NormalisableRange<float>(380.f, 480.f, 0.1f), 440.f,
+        AudioParameterFloatAttributes().withAutomatable(false).withLabel("Hz")
+            .withStringFromValueFunction([](float v, int) { return String(v, 1) + " Hz"; })));
     paramVector.push_back(std::make_unique<AudioParameterFloat>(JadeParamID::freeBpm, "BPM grid free tempo value",
         NormalisableRange<float>(20.f, 300.f, 0.1f), 120.f,
         AudioParameterFloatAttributes().withAutomatable(false).withLabel("BPM")
@@ -576,6 +580,39 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
             g.fillPath(head);
         }
     };
+    // reference pitch A4: drag box with a tuning fork, always editable
+    m_refPitchValue.setTextColour(JadeGray);
+    m_refPitchValue.setRange(380.0, 480.0, 0.1);
+    m_refPitchValue.setDragSteps(0.1, 0.01); // per pixel; Shift: fine
+    m_refPitchValue.setEditable(true);
+    m_refPitchValue.setTooltip("Reference pitch A4 in Hz for the note names (keyboard overlay and readout): "
+                               "drag up/down (Shift: fine), mouse wheel or double-click to type");
+    m_refPitchValue.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        // tuning fork: two long prongs joined by a small U, a thicker handle below
+        const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight();
+        const float cx = x + 0.5f*w, l = cx - 0.17f*w, rr = cx + 0.17f*w, bend = y + 0.5f*h, bottom = bend + 0.15f*h;
+        juce::Path fork;
+        fork.startNewSubPath(l, y);
+        fork.lineTo(l, bend);
+        fork.quadraticTo(l, bottom, cx, bottom);
+        fork.quadraticTo(rr, bottom, rr, bend);
+        fork.lineTo(rr, y);
+        g.setColour(c);
+        g.strokePath(fork, juce::PathStrokeType(1.2f));
+        g.fillRoundedRectangle(cx - 0.08f*w, bottom - 0.5f, 0.16f*w, y + h - bottom + 0.5f, 0.06f*w);
+    };
+    m_refPitchValue.onDragStart = [this] { if (auto* param = m_apvts.getParameter(JadeParamID::refPitch)) param->beginChangeGesture(); };
+    m_refPitchValue.onValueChange = [this]
+    {
+        if (auto* param = dynamic_cast<juce::RangedAudioParameter*>(m_apvts.getParameter(JadeParamID::refPitch)))
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(m_refPitchValue.getValue())));
+        m_refPitch = m_refPitchValue.getValue();
+        updateRefPitchText();
+        repaint();
+    };
+    m_refPitchValue.onDragEnd = [this] { if (auto* param = m_apvts.getParameter(JadeParamID::refPitch)) param->endChangeGesture(); };
+    addAndMakeVisible(m_refPitchValue);
     m_resetViewButton.setTooltip("Overview: full frequency, time and colour range");
     m_resetViewButton.onClick = [this](){ resetViewClicked(); };
     addAndMakeVisible(m_resetViewButton);
@@ -746,7 +783,10 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     g.setFont (9.0f*m_scaleFactor);
     
     juce::String text2display = "V " + juce::String(PLUGIN_VERSION_MAJOR) + "." + juce::String(PLUGIN_VERSION_MINOR) + "." + juce::String(PLUGIN_VERSION_PATCH);
-    g.drawFittedText (text2display, getLocalBounds(), juce::Justification::bottomLeft, 1);
+    // left of the time axis labels, below the frequency axis (the bottom row holds the reference pitch)
+    const auto versionArea = juce::Rectangle<int>(static_cast<int>(g_SliderMinFreq_x*m_scaleFactor), display.getBottom(),
+                                                  display.getX(), static_cast<int>(g_timeAxisHeight*m_scaleFactor));
+    g.drawFittedText (text2display, versionArea, juce::Justification::centredLeft, 1);
 
 }
 
@@ -791,6 +831,9 @@ void JadeSpectrogramGUI::resized()
     // export at the right end of the display, the overview button below the colour range slider
     m_exportButton.setBounds(display.getRight() - sc(28), rowY, sc(28), rowH);
     m_resetViewButton.setBounds(width - sc(g_SliderMinFreq_x + 30), rowY, sc(24), rowH); // clear of the resize corner
+    // reference pitch below the frequency axis (slider column and axis labels), left of Pause
+    m_refPitchValue.setBounds(sc(g_SliderMinFreq_x), rowY, display.getX() - sc(g_SliderMinFreq_x + 4), rowH);
+    m_refPitchValue.setFont(juce::FontOptions(11.f*sf));
 
     m_colorScheme.setBounds(width - sc(g_colorbar_width + g_FreqMeter + g_SliderWidth), rowY, sc(g_colorbar_width), rowH);
 }
@@ -1071,6 +1114,9 @@ void JadeSpectrogramGUI::syncFromParameters()
         setTitleBarVisible(m_titleBarVisible); // resolution box and BPM value only with the grid
     }
     m_freeBpm = static_cast<double>(m_apvts.getRawParameterValue(JadeParamID::freeBpm)->load());
+    m_refPitch = static_cast<double>(m_apvts.getRawParameterValue(JadeParamID::refPitch)->load());
+    m_refPitchValue.setValue(m_refPitch);
+    updateRefPitchText();
     const bool tempoFree = m_apvts.getRawParameterValue(JadeParamID::tempoFree)->load() > 0.5f;
     if (tempoFree != m_tempoFree)
     {
@@ -1321,6 +1367,11 @@ void JadeSpectrogramGUI::updateBpmLabel()
     }
 }
 
+void JadeSpectrogramGUI::updateRefPitchText()
+{
+    m_refPitchValue.setText(String(m_refPitch, 1));
+}
+
 void JadeSpectrogramGUI::tempoSyncClicked()
 {
     // to free: start with the current host tempo (if there is one), the grid continues the host grid
@@ -1493,7 +1544,7 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
 void JadeSpectrogramGUI::drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<int> display, float textH) const
 {
     // Piano roll: one band per semitone from a quarter tone below to a quarter tone above the note
-    // (A4 = 440 Hz), the same boundaries as the rounding of the readout. Black keys darken, white
+    // (A4 = reference pitch, default 440 Hz), the same boundaries as the rounding of the readout. Black keys darken, white
     // keys lighten slightly; lines where two white keys meet (E/F, B/C), stronger at C. Bands
     // thinner than about 3 px fade out (linear axis at low frequencies), note names at every C,
     // and at every note when a band is taller than the text.
@@ -1508,7 +1559,7 @@ void JadeSpectrogramGUI::drawKeyboardOverlay(juce::Graphics& g, juce::Rectangle<
     const juce::MidiMessage names;
     for (int n = 0; n <= 135; ++n)
     {
-        const float fc = 440.f*std::pow(2.f, static_cast<float>(n - 69)/12.f);
+        const float fc = static_cast<float>(m_refPitch)*std::pow(2.f, static_cast<float>(n - 69)/12.f);
         const float flo = fc/quarterTone, fhi = fc*quarterTone;
         if (fhi < fmin || flo > fmax)
             continue;
@@ -1821,11 +1872,16 @@ bool JadeSpectrogramGUI::setLabelText(int x, int y)
         if (m_axisMap != AxisMap::Bins)
             val = rowValue(m_displaymem.at(column), imageRow);
 
-        MidiMessage msg;
-        int midinotenumber =  int(log(freq/440.0)/log(2) * 12 + 69 + 0.5);
-        String midiNoteName = msg.getMidiNoteName(midinotenumber,true,true,4);
+        // note and deviation in cents from the reference pitch (A4); the same rounding as the
+        // band boundaries of the keyboard overlay
+        const double semitones = 12.0*std::log2(static_cast<double>(freq)/m_refPitch) + 69.0;
+        const int midinotenumber = static_cast<int>(std::floor(semitones + 0.5));
+        const int cents = juce::roundToInt(100.0*(semitones - static_cast<double>(midinotenumber)));
+        const String midiNoteName = MidiMessage::getMidiNoteName(midinotenumber, true, true, 4);
+        const String sign = cents > 0 ? String("+") : (cents < 0 ? String("-") : String(CharPointer_UTF8("\xc2\xb1"))); // plus-minus at 0
+        const String centText = sign + String(std::abs(cents)) + " ct";
 
-        m_readoutText = String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB");
+        m_readoutText = String(int(freq+0.5)) + String(" Hz | ") + midiNoteName + " " + centText + String(" | ") + String(0.1*int(val*10+0.5),1) + String(" dB");
         return true;
     }
     return false;

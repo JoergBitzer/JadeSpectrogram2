@@ -28,7 +28,8 @@ a ReadMeFirst.txt with the installation steps and the license files.
 
 Since 2.1: an overview button (full frequency, time and colour range) and, in 2.2, a free
 tempo for the BPM grid (synced to the host or your own tempo, Alt+click sets a bar line) for
-tempo analysis.
+tempo analysis. 2.3 adds a free reference pitch A4 (380-480 Hz) for the note names and the
+deviation in cents in the crosshair readout.
 
 The full release notes are in the appendix of the [manual](docs/ManualJadeSpectrogram2.pdf).
 

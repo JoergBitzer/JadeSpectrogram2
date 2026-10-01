@@ -76,6 +76,7 @@ namespace JadeParamID
     inline const juce::String bpmResolution {"BpmResolution"}; // 0: bars only, 1: 1/2, 2: 1/4, 3: 1/8, 4: 1/16 note
     inline const juce::String tempoFree {"TempoFree"}; // BPM grid: false = synced to the host tempo, true = own tempo
     inline const juce::String freeBpm {"FreeBpm"};     // tempo of the free grid (quarter notes per minute)
+    inline const juce::String refPitch {"RefPitch"};   // reference pitch A4 in Hz (note names: overlay and readout)
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192
@@ -327,6 +328,9 @@ private:
     void updateBpmLabel();
     IconButton m_exportButton;
     IconButton m_resetViewButton; // overview: all three range sliders to their full range
+    DragValueBox m_refPitchValue; // reference pitch A4 (tuning fork), below the frequency axis
+    double m_refPitch = 440.0;
+    void updateRefPitchText();
     void resetViewClicked();
     std::unique_ptr<juce::FileChooser> m_exportChooser; // alive while the (asynchronous) dialog is open
     void exportClicked();
