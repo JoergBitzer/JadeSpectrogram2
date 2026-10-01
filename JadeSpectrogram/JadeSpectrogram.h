@@ -296,6 +296,8 @@ private:
     void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const;
     void updateBpmLabel();
     IconButton m_exportButton;
+    IconButton m_resetViewButton; // overview: all three range sliders to their full range
+    void resetViewClicked();
     std::unique_ptr<juce::FileChooser> m_exportChooser; // alive while the (asynchronous) dialog is open
     void exportClicked();
     size_t m_imageRows = 1; // height of m_internalImg

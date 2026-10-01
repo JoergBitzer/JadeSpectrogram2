@@ -514,6 +514,27 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     };
     m_exportButton.setTooltip("Export: save the visible spectrogram with its axes as a PNG file");
     m_exportButton.onClick = [this](){ exportClicked(); };
+    addAndMakeVisible(m_exportButton);
+    // reset button: four arrows into the corners (overview)
+    m_resetViewButton.drawIcon = [](juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = r.withSizeKeepingCentre(r.getWidth()*1.25f, r.getHeight()*1.25f);
+        const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight();
+        const float cx = x + 0.5f*w, cy = y + 0.5f*h, a = 0.32f*w; // arrow head length
+        g.setColour(c);
+        for (const auto& corner : {juce::Point<float>(x, y), juce::Point<float>(x + w, y),
+                                   juce::Point<float>(x, y + h), juce::Point<float>(x + w, y + h)})
+        {
+            const float sx = corner.x < cx ? 1.f : -1.f, sy = corner.y < cy ? 1.f : -1.f;
+            g.drawLine(cx - sx*0.1f*w, cy - sy*0.1f*h, corner.x + sx*0.15f*w, corner.y + sy*0.15f*h, 1.4f);
+            juce::Path head;
+            head.addTriangle(corner.x, corner.y, corner.x + sx*a, corner.y, corner.x, corner.y + sy*a);
+            g.fillPath(head);
+        }
+    };
+    m_resetViewButton.setTooltip("Overview: full frequency, time and colour range");
+    m_resetViewButton.onClick = [this](){ resetViewClicked(); };
+    addAndMakeVisible(m_resetViewButton);
     m_keyboardButton.setTooltip("Keyboard overlay: semitone bands and note names over the spectrogram");
     m_keyboardButton.onClick = [this](){ setBoolParameter(JadeParamID::keyboardOverlay, !m_keyboardOverlay); syncFromParameters(); repaint(); };
     updateDisplayRange();
@@ -723,6 +744,9 @@ void JadeSpectrogramGUI::resized()
     x += sc(32);
     m_averagingSlider.setTextBoxStyle(Slider::TextBoxRight, false, sc(56), rowH);
     m_averagingSlider.setBounds(x, rowY, sc(170), rowH);
+    // export at the right end of the display, the overview button below the colour range slider
+    m_exportButton.setBounds(display.getRight() - sc(28), rowY, sc(28), rowH);
+    m_resetViewButton.setBounds(width - sc(g_SliderMinFreq_x + 30), rowY, sc(24), rowH); // clear of the resize corner
 
     m_colorScheme.setBounds(width - sc(g_colorbar_width + g_FreqMeter + g_SliderWidth), rowY, sc(g_colorbar_width), rowH);
 }
@@ -1138,7 +1162,7 @@ float JadeSpectrogramGUI::timeSpan() const
 
 std::vector<juce::Component*> JadeSpectrogramGUI::getTitleBarControls()
 {
-    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel, &m_exportButton};
+    return {&m_freqAxisButton, &m_keyboardButton, &m_bpmButton, &m_bpmResolutionCombo, &m_bpmLabel};
 }
 
 void JadeSpectrogramGUI::setTitleBarBounds(float s)
@@ -1150,10 +1174,16 @@ void JadeSpectrogramGUI::setTitleBarBounds(float s)
     float x = static_cast<float>(g_spec_x + 60 + 500 + 5);
     m_keyboardButton.setBounds(sc(x), y, sc(28), h);       x += 31.f;
     m_bpmButton.setBounds(sc(x), y, sc(28), h);            x += 31.f;
-    m_bpmResolutionCombo.setBounds(sc(x), y, sc(46), h);   x += 49.f;
-    m_bpmLabel.setBounds(sc(x), y, sc(50), h);             x += 53.f;
-    m_exportButton.setBounds(sc(x), y, sc(28), h);         // up to the logo (g_spec_x + g_spec_width - 68)
+    m_bpmResolutionCombo.setBounds(sc(x), y, sc(62), h);   x += 65.f;
+    m_bpmLabel.setBounds(sc(x), y, sc(60), h);             // up to the logo (g_spec_x + g_spec_width - 68)
     m_bpmLabel.setFont(juce::FontOptions(11.f*s));
+}
+
+void JadeSpectrogramGUI::resetViewClicked()
+{
+    // each range slider to its full range; the bindings write the parameters (one host gesture each)
+    for (RangeSlider* slider : {&m_freqRangeSlider, &m_timeRangeSlider, &m_colorRangeSlider})
+        slider->setMinAndMaxValues(slider->getMinimum(), slider->getMaximum(), juce::sendNotificationSync);
 }
 
 void JadeSpectrogramGUI::setTitleBarVisible(bool visible)
@@ -1164,7 +1194,6 @@ void JadeSpectrogramGUI::setTitleBarVisible(bool visible)
     m_bpmButton.setVisible(visible);
     m_bpmResolutionCombo.setVisible(visible && m_bpmGrid); // only with the grid
     m_bpmLabel.setVisible(visible && m_bpmGrid);
-    m_exportButton.setVisible(visible);
 }
 
 juce::Image JadeSpectrogramGUI::renderExportImage(float resolutionScale)
