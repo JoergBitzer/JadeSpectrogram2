@@ -738,17 +738,10 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
                       m_scaleFactor*static_cast<float>(TextHeight));
     drawTimeAxis(g, display, m_scaleFactor*static_cast<float>(TextHeight));
 
-    // Plot Colorbar (same height as the display)
+    // Plot Colorbar (same height as the display), cached at its pixel size
     int cbHeight = display.getHeight();
-    Image colorbar(Image::RGB,1,cbHeight,true);
-    for (int kk = 0; kk < cbHeight; kk++)
-    {   
-        float val = float(kk)/cbHeight*(g_maxColorVal - g_minColorVal) + g_minColorVal;
-        juce::uint32 color = m_colorpalette.getRGBColor(val) | 0xFF000000u; // kein alpha blending
-        colorbar.setPixelAt(0,cbHeight-1-kk,juce::Colour(color));
-    }
-    g.drawImage(colorbar,w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)),top,static_cast<int>(m_scaleFactor*g_colorbar_width),cbHeight,
-                0,0,1,cbHeight);
+    updateColorbarImage(static_cast<int>(m_scaleFactor*g_colorbar_width), cbHeight);
+    g.drawImageAt(m_ColorbarImg, w-static_cast<int>(m_scaleFactor*(g_colorbar_width+g_FreqMeter + g_SliderWidth)), top);
 
     // draw scale
     // Add colorbar scale
@@ -788,6 +781,32 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
                                                   display.getX(), static_cast<int>(g_timeAxisHeight*m_scaleFactor));
     g.drawFittedText (text2display, versionArea, juce::Justification::centredLeft, 1);
 
+}
+
+void JadeSpectrogramGUI::updateColorbarImage(int width, int height)
+{
+    // the same colours as before (one value per pixel row, the palette's current colour range);
+    // built directly at the drawn size, so painting it is a plain copy without scaling
+    const int scheme = m_colorScheme.getSelectedItemIndex();
+    const float cMin = m_apvts.getRawParameterValue(paramDisplayMinColor.ID)->load();
+    const float cMax = m_apvts.getRawParameterValue(paramDisplayMaxColor.ID)->load();
+    width = juce::jmax(1, width);
+    height = juce::jmax(1, height);
+    if (m_ColorbarImg.isValid() && m_ColorbarImg.getWidth() == width && m_ColorbarImg.getHeight() == height
+        && scheme == m_colorbarScheme && juce::approximatelyEqual(cMin, m_colorbarMin) && juce::approximatelyEqual(cMax, m_colorbarMax))
+        return;
+    m_colorbarScheme = scheme;
+    m_colorbarMin = cMin;
+    m_colorbarMax = cMax;
+    m_ColorbarImg = Image(Image::RGB, width, height, false);
+    Image::BitmapData data(m_ColorbarImg, Image::BitmapData::writeOnly);
+    for (int kk = 0; kk < height; ++kk)
+    {
+        const float val = float(kk)/static_cast<float>(height)*(g_maxColorVal - g_minColorVal) + g_minColorVal;
+        const juce::Colour colour(m_colorpalette.getRGBColor(val) | 0xFF000000u); // kein alpha blending
+        for (int x = 0; x < width; ++x)
+            data.setPixelColour(x, height - 1 - kk, colour);
+    }
 }
 
 void JadeSpectrogramGUI::resized()
@@ -1547,10 +1566,12 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
             const float x = std::floor(xa + static_cast<float>((pos - a.ppq)/(b.ppq - a.ppq))*(xb - xa)) + 0.5f;
             const float alpha = isBar ? 0.6f : (isBeat ? 0.45f : 0.25f);
             const float width = isBar ? 2.f : 1.f;
+            // vertical lines as rectangles: the same area as a line of this width centred at x,
+            // but without stroking a path (much cheaper with many lines, e.g. 1/16)
             g.setColour(juce::Colours::black.withAlpha(0.5f*alpha));
-            g.drawLine(x + width, top, x + width, bottom, width);
+            g.fillRect(juce::Rectangle<float>(x + width - 0.5f*width, top, width, bottom - top));
             g.setColour(juce::Colours::white.withAlpha(alpha));
-            g.drawLine(x, top, x, bottom, width);
+            g.fillRect(juce::Rectangle<float>(x - 0.5f*width, top, width, bottom - top));
         }
     }
 }

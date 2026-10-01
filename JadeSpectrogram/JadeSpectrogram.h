@@ -245,7 +245,10 @@ private:
     size_t m_newDataAvailable = 0;
     std::vector<float> m_exchangeSpectrum;
     Image m_internalImg;
-    Image m_ColorbarImg;
+    Image m_ColorbarImg; // colour bar at its pixel size, rebuilt only when map, colour range or size change
+    int m_colorbarScheme = -1;
+    float m_colorbarMin = 0.f, m_colorbarMax = 0.f;
+    void updateColorbarImage(int width, int height);
     size_t m_internalWidth;
     size_t m_internalHeight;
     bool m_recomputeAll;
