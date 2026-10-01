@@ -72,7 +72,7 @@ namespace JadeParamID
     inline const juce::String timeEnd {"TimeEnd"};     // fractions 0 ... 1 (1 = right edge)
     inline const juce::String keyboardOverlay {"KeyboardOverlay"}; // piano-roll bands over the spectrogram
     inline const juce::String bpmGrid {"BpmGrid"};             // vertical lines at bars, beats, subdivisions
-    inline const juce::String bpmResolution {"BpmResolution"}; // 0: beat, 1: 1/2, 2: 1/4, 3: 1/8, 4: 1/16 beat
+    inline const juce::String bpmResolution {"BpmResolution"}; // 0: bars only, 1: 1/2, 2: 1/4, 3: 1/8, 4: 1/16 note
 }
 
 // FFT sizes selectable at runtime: 2^9 = 512 ... 2^13 = 8192

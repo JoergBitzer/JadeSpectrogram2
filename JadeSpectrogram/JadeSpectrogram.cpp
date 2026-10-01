@@ -328,7 +328,7 @@ static void addDisplaySettings(std::vector<std::unique_ptr<juce::RangedAudioPara
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::keyboardOverlay, "Keyboard overlay", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterBool>(JadeParamID::bpmGrid, "BPM grid", false, boolean));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::bpmResolution, "BPM grid resolution",
-        StringArray{"1 beat", "1/2 beat", "1/4 beat", "1/8 beat", "1/16 beat"}, 0, choice));
+        StringArray{"1 bar", "1/2 note", "1/4 note", "1/8 note", "1/16 note"}, 2, choice));
     paramVector.push_back(std::make_unique<AudioParameterChoice>(JadeParamID::overlap, "Overlap",
         StringArray{"50 %", "75 %"}, 0, choice));
     const auto fraction = AudioParameterFloatAttributes().withAutomatable(false)
@@ -491,7 +491,7 @@ m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
     m_bpmResolutionCombo.addItem("1/8", 4);
     m_bpmResolutionCombo.addItem("1/16", 5);
     m_bpmResolutionCombo.setColour(juce::ComboBox::ColourIds::backgroundColourId, JadeTeal);
-    m_bpmResolutionCombo.setTooltip("Grid resolution: every beat, 1/2, 1/4, 1/8 or 1/16 beat");
+    m_bpmResolutionCombo.setTooltip("Grid resolution: bars only, or every 1/2, 1/4, 1/8 or 1/16 note");
     m_bpmResolutionAttachment = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(m_apvts, JadeParamID::bpmResolution, m_bpmResolutionCombo);
     m_bpmLabel.setJustificationType(juce::Justification::centredLeft);
     m_bpmLabel.setColour(juce::Label::textColourId, JadeGray);
@@ -1230,16 +1230,18 @@ void JadeSpectrogramGUI::updateBpmLabel()
 
 void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const
 {
-    // Vertical lines where the musical position of the columns crosses a bar, a beat or a subdivision
-    // (1, 1/2, 1/4, 1/8, 1/16 beat), interpolated between the two columns. No lines where the position
-    // does not advance (transport stopped) or jumps (locate, loop), or without host tempo. Finer
-    // levels are left out where their lines would come closer than 5 px. White with a dark shadow,
+    // Vertical lines where the musical position of the columns crosses a bar or a grid position
+    // (resolution 1: bars only; 1/2, 1/4, 1/8, 1/16: note values counted from the bar start, as in
+    // a DAW grid, e.g. 1/4 in 4/4 = every beat), interpolated between the two columns. Bars and
+    // beats are drawn stronger. No lines where the position does not advance (transport stopped) or
+    // jumps (locate, loop), or without host tempo. If the grid lines would come closer than 5 px,
+    // only the beats (if coarser) or only the bars are drawn. White with a dark shadow,
     // so they are visible on bright and on dark parts of the spectrogram.
     const size_t W = m_internalWidth;
     if (W < 2 || m_columnBeat.size() != W)
         return;
     const int resolution = juce::jlimit(0, 4, juce::roundToInt(m_apvts.getRawParameterValue(JadeParamID::bpmResolution)->load()));
-    const double subdivision = static_cast<double>(1 << resolution); // lines per beat
+    const double noteLen = 4.0/static_cast<double>(1 << resolution); // grid step in quarter notes (ppq)
     const float dx = static_cast<float>(display.getX()), dw = static_cast<float>(display.getWidth());
     const float span = m_timeEnd - m_timeStart;
     auto memColumn = [&](size_t ww) { return m_isRunningDisplay ? ww : (m_displaymem_writepos + ww) % W; };
@@ -1264,13 +1266,18 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
         if (b.ppq - a.ppq > 3.0*perColumn + 1e-9)
             continue;
         const float pxPerPpq = pxPerColumn/static_cast<float>(perColumn);
-        const double step = static_cast<double>(b.beatLen)/subdivision;
-        const bool drawSub = subdivision > 1.0 && static_cast<float>(step)*pxPerPpq >= 5.f;
-        const bool drawBeat = b.beatLen*pxPerPpq >= 5.f;
-        const bool drawBar = b.barLen*pxPerPpq >= 5.f;
-        if (!drawBar)
+        const double barLen = static_cast<double>(b.barLen), beatLen = static_cast<double>(b.beatLen);
+        if (barLen*static_cast<double>(pxPerPpq) < 5.0)
             continue;
-        const double fineStep = drawSub ? step : (drawBeat ? static_cast<double>(b.beatLen) : static_cast<double>(b.barLen));
+        // finest step that is at least 5 px wide: the grid step, else the beat (if coarser), else the bar
+        double fineStep = barLen;
+        if (resolution > 0 && noteLen < barLen)
+        {
+            if (noteLen*static_cast<double>(pxPerPpq) >= 5.0)
+                fineStep = noteLen;
+            else if (beatLen > noteLen && beatLen < barLen && beatLen*static_cast<double>(pxPerPpq) >= 5.0)
+                fineStep = beatLen;
+        }
         const float xa = xOf(ww - 1), xb = xOf(ww);
         for (double k = std::floor((a.ppq - b.barStart)/fineStep) + 1.0; b.barStart + k*fineStep <= b.ppq + 1e-9; k += 1.0)
         {
