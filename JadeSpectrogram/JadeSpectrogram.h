@@ -318,6 +318,9 @@ private:
                         juce::int64 endSample = -1; }; // -1: column not written yet
     ColumnBeat m_newestColumn; // the last written column
     ColumnBeat beatOfColumn(size_t memoryColumn) const; // host position, or the free grid position
+    juce::int64 lastBarLineSample(const ColumnBeat& column) const; // host bar line at or before the column end
+    // synced and paused, host tempo changed since the newest column: grid at the current host tempo
+    bool useLiveHostTempo() const;
     std::vector<ColumnBeat> m_columnBeat; // beat position of each memory column (like m_displaymem)
     SliceInfo m_lastSliceInfo;            // of the newest slice
     void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> display) const;

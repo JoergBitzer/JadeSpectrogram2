@@ -1341,37 +1341,49 @@ void JadeSpectrogramGUI::anchorFreeGrid()
     // a bar line of the free grid: the last bar line of the host grid before the newest column
     // (with the host tempo of that column), so the free grid continues it without a jump;
     // without host position the newest column
-    const ColumnBeat& c = m_newestColumn;
-    if (c.endSample < 0)
-    {
-        m_freeAnchorSample = 0;
-        return;
-    }
-    m_freeAnchorSample = c.endSample;
-    if (c.has && c.bpm > 0.f && c.barLen > 0.f)
-    {
-        double inBar = std::fmod(c.ppq - c.barStart, static_cast<double>(c.barLen));
-        if (inBar < 0.0)
-            inBar += static_cast<double>(c.barLen);
-        const double samplesPerQuarter = 60.0*static_cast<double>(m_processor.m_algo.getSamplerate())/static_cast<double>(c.bpm);
-        m_freeAnchorSample = c.endSample - static_cast<juce::int64>(std::llround(inBar*samplesPerQuarter));
-    }
+    m_freeAnchorSample = m_newestColumn.endSample < 0 ? 0 : lastBarLineSample(m_newestColumn);
+}
+
+juce::int64 JadeSpectrogramGUI::lastBarLineSample(const ColumnBeat& c) const
+{
+    // with the host tempo of that column; without host position the column end itself
+    if (!c.has || c.bpm <= 0.f || c.barLen <= 0.f)
+        return c.endSample;
+    double inBar = std::fmod(c.ppq - c.barStart, static_cast<double>(c.barLen));
+    if (inBar < 0.0)
+        inBar += static_cast<double>(c.barLen);
+    const double samplesPerQuarter = 60.0*static_cast<double>(m_processor.m_algo.getSamplerate())/static_cast<double>(c.bpm);
+    return c.endSample - static_cast<juce::int64>(std::llround(inBar*samplesPerQuarter));
+}
+
+bool JadeSpectrogramGUI::useLiveHostTempo() const
+{
+    // while paused the stored positions cannot follow the host; if the host tempo is changed now
+    // (e.g. to find the tempo of the paused audio), draw the grid at the new tempo from the last
+    // host bar line. Unchanged tempo: the stored positions (the beats as they really were).
+    const float hostBpm = m_processor.m_algo.getHostBpm();
+    return !m_tempoFree && m_isPaused && hostBpm > 0.f && m_newestColumn.has && m_newestColumn.endSample >= 0
+           && std::abs(hostBpm - m_newestColumn.bpm) > 1e-3f;
 }
 
 JadeSpectrogramGUI::ColumnBeat JadeSpectrogramGUI::beatOfColumn(size_t memoryColumn) const
 {
     const ColumnBeat& c = m_columnBeat[memoryColumn];
-    if (!m_tempoFree)
+    const bool live = useLiveHostTempo();
+    if (!m_tempoFree && !live)
         return c;
-    // free grid: the position from the column's time, bar lines at the anchor + k bars
+    // free grid (or synced + paused with a changed host tempo): the position from the column's
+    // time, bar lines at the anchor + k bars
+    const double bpm = live ? static_cast<double>(m_processor.m_algo.getHostBpm()) : m_freeBpm;
+    const juce::int64 anchor = live ? lastBarLineSample(m_newestColumn) : m_freeAnchorSample;
     ColumnBeat f;
     f.endSample = c.endSample;
-    f.has = c.endSample >= 0 && m_freeBpm > 0.0;
-    f.bpm = static_cast<float>(m_freeBpm);
+    f.has = c.endSample >= 0 && bpm > 0.0;
+    f.bpm = static_cast<float>(bpm);
     f.beatLen = 4.f/static_cast<float>(m_freeDenominator);
     f.barLen = static_cast<float>(m_freeNumerator)*f.beatLen;
     f.barStart = 0.0;
-    f.ppq = static_cast<double>(c.endSample - m_freeAnchorSample)*m_freeBpm/(60.0*static_cast<double>(m_processor.m_algo.getSamplerate()));
+    f.ppq = static_cast<double>(c.endSample - anchor)*bpm/(60.0*static_cast<double>(m_processor.m_algo.getSamplerate()));
     return f;
 }
 
