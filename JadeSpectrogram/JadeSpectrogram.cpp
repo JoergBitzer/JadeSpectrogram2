@@ -6,8 +6,7 @@
 const float g_minValForLogSpectrogram = 1e-10f;
 
 JadeSpectrogramAudio::JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* processor)
-:SynchronBlockProcessor(), m_processor(processor), m_fs(48000.f), m_channels(2), m_fftsize(2048), m_freqsize(2048/2+1),
-m_fifo(1000, g_maxFFTSize/2+1) // 1000 time slices should be enough
+:SynchronBlockProcessor(), m_processor(processor) // the other members: default values in the header
 {
     m_mixMode = JadeSpectrogramAudio::ChannelMixMode::AbsMean;
     m_windowChoice = SpectrumAnalyzer::WindowType::Hann;
@@ -381,13 +380,7 @@ size_t JadeSpectrogramAudio::getnextpowerof2(float fftsize_ms)
 
 
 JadeSpectrogramGUI::JadeSpectrogramGUI(JadeSpectrogramAudioProcessor& p, juce::AudioProcessorValueTreeState& apvts)
-:m_processor(p) ,m_apvts(apvts),
-m_internalImg(Image::RGB,1,1,true),
-m_internalHeight(1), m_recomputeAll(true),m_maxColorVal(g_maxColorVal),m_minColorVal(g_minColorVal),
-m_colorpalette(256,CColorPalette::PaletteName::kPlasma),m_maxDisplayFreq(20000.f),m_minDisplayFreq(1.f),
-//somethingChanged(nullptr),
-m_isPaused(false),m_isRunningDisplay(false),m_hideFFTSizeCombobox(false)
-//,m_editor(editor)
+:m_processor(p), m_apvts(apvts) // the other members: default values in the header
 {
     m_internalHeight = m_processor.m_algo.getSpectrumSize();
     float fs = m_processor.m_algo.getSamplerate();
