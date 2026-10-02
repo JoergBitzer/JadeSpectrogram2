@@ -46,3 +46,6 @@ build
 # local marketing texts (KVR product page and forum)
 marketing.md
 marketing.html
+
+# local screenshots of the author (not part of the repository)
+Screenshot_*.png
