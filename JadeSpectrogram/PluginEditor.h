@@ -37,7 +37,7 @@ private:
     Image m_TitleImage;
     Image m_JadeLogo;
     Image m_AboutBox;
-    bool m_aboutboxvisible;
+    bool m_aboutboxvisible = false; // the about box opens with a click on the logo
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JadeSpectrogramAudioProcessorEditor)
 };
