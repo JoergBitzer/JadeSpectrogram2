@@ -155,6 +155,9 @@ public:
         bool hasBarStart = false;
         double barStartPpq = 0.0;
         int numerator = 4, denominator = 4;
+        bool isPlaying = false;    // stopped: the position does not advance inside the block
+        bool isLooping = false;    // cycle on: the position jumps from loopEnd to loopStart
+        double loopStartPpq = 0.0, loopEndPpq = 0.0;
     };
     void setHostPosition(const HostPosition& position)
     {
@@ -231,6 +234,15 @@ private:
     juce::int64 m_samplesFed = 0;       // samples given to processBlock so far
     juce::int64 m_blockStartSample = 0; // m_samplesFed at the start of the current host block
     juce::int64 m_sliceEndSample = 0;   // end of the last complete slice
+    // musical position inside the current block (stopped: constant; cycle: wraps at the loop end)
+    double ppqAtSample(juce::int64 sample) const;
+    void detectSegmentStarts(int numSamples); // start of play, locate, loop jump (audio thread)
+    bool m_wasPlaying = false;
+    double m_expectedPpq = 0.0; // position the next block should start at if nothing jumps
+    // new sections of the musical time not yet handed to a slice (at most two per block)
+    struct SegmentStart { juce::int64 sample; double ppq; };
+    std::array<SegmentStart, 4> m_segments {};
+    size_t m_nrOfSegments = 0;
 
     // --- output: spectra (with their SliceInfo) to the GUI ---
     TwoDimBlockFreeFiFO m_fifo {1000, g_maxFFTSize/2 + 1}; // 1000 time slices should be enough
@@ -399,7 +411,8 @@ private:
     void tempoSyncClicked();
     // musical position of one memory column (from its slice)
     struct ColumnBeat { bool has = false; double ppq = 0.0; double barStart = 0.0; float barLen = 4.f; float beatLen = 1.f; float bpm = 0.f;
-                        juce::int64 endSample = -1; }; // -1: column not written yet
+                        juce::int64 endSample = -1;   // -1: column not written yet
+                        bool hasSegmentStart = false; double segmentStartPpq = 0.0; }; // see SliceInfo
     std::vector<ColumnBeat> m_columnBeat; // beat position of each memory column (like m_displaymem)
     ColumnBeat m_newestColumn; // the last written column
     ColumnBeat beatOfColumn(size_t memoryColumn) const; // host position, or the free grid position

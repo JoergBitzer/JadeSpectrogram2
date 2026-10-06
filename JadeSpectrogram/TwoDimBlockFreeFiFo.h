@@ -24,6 +24,10 @@ struct SliceInfo
     float beatPpq = 1.f;       // 4 / denominator
     float bpm = 0.f;
     long long endSample = 0;   // sample count (since prepareToPlay) at the end of the slice
+    // a new section of the musical time starts inside this slice (start of play, locate, loop
+    // jump): its position; the positions from there to ppq belong to this slice
+    bool hasSegmentStart = false;
+    double segmentStartPpq = 0.0;
 };
 
 class TwoDimBlockFreeFiFO

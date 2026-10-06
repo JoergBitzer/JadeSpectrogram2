@@ -200,6 +200,13 @@ void JadeSpectrogramAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     {
         if (auto position = hostPlayHead->getPosition())
         {
+            hostPosition.isPlaying = position->getIsPlaying();
+            hostPosition.isLooping = position->getIsLooping();
+            if (const auto loop = position->getLoopPoints())
+            {
+                hostPosition.loopStartPpq = loop->ppqStart;
+                hostPosition.loopEndPpq = loop->ppqEnd;
+            }
             const auto ppq = position->getPpqPosition();
             const auto bpm = position->getBpm();
             if (ppq.hasValue() && bpm.hasValue())

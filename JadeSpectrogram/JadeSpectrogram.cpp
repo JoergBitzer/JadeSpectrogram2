@@ -57,8 +57,61 @@ void JadeSpectrogramAudio::processBlock(juce::AudioBuffer<float>& data, juce::Mi
 {
     applyPendingChanges();
     m_blockStartSample = m_samplesFed;
+    detectSegmentStarts(data.getNumSamples());
     SynchronBlockProcessor::processBlock(data, midiMessages);
     m_samplesFed += data.getNumSamples();
+}
+
+double JadeSpectrogramAudio::ppqAtSample(juce::int64 sample) const
+{
+    // host position at the block start plus the samples since then -- only while playing; with
+    // cycle on, a position past the loop end continues at the loop start (the host jumps inside
+    // the block and reports the new position only with the next block)
+    const HostPosition& h = m_hostPosition;
+    if (!h.isPlaying)
+        return h.ppq;
+    const double fs = static_cast<double>(m_fs.load(std::memory_order_relaxed));
+    double ppq = h.ppq + static_cast<double>(sample - m_blockStartSample)*h.bpm/(60.0*fs);
+    const double loopLen = h.loopEndPpq - h.loopStartPpq;
+    if (h.isLooping && loopLen > 0.0 && h.ppq < h.loopEndPpq && ppq >= h.loopEndPpq)
+        ppq = h.loopStartPpq + std::fmod(ppq - h.loopEndPpq, loopLen);
+    return ppq;
+}
+
+void JadeSpectrogramAudio::detectSegmentStarts(int numSamples)
+{
+    // a new section of the musical time starts where the position does not continue: at the start
+    // of play, at a locate or a loop jump between blocks (block start), and at a loop jump inside
+    // the block (exact sample from the loop end). The slices hand them to the beat grid.
+    const HostPosition& h = m_hostPosition;
+    const bool playing = h.hasPpq && h.bpm > 0.0 && h.isPlaying;
+    if (playing)
+    {
+        const double fs = static_cast<double>(m_fs.load(std::memory_order_relaxed));
+        const double ppqPerSample = h.bpm/(60.0*fs);
+        // half a block of tolerance: tempo changes and rounding of the host are no jumps
+        const double tolerance = juce::jmax(1e-6, 0.5*static_cast<double>(numSamples)*ppqPerSample);
+        auto add = [this](juce::int64 sample, double ppq)
+        {
+            if (m_nrOfSegments == m_segments.size()) // not consumed (no slices, e.g. paused): keep the latest
+            {
+                std::move(m_segments.begin() + 1, m_segments.end(), m_segments.begin());
+                --m_nrOfSegments;
+            }
+            m_segments[m_nrOfSegments++] = {sample, ppq};
+        };
+        if (!m_wasPlaying || std::abs(h.ppq - m_expectedPpq) > tolerance)
+            add(m_blockStartSample, h.ppq);
+        const double loopLen = h.loopEndPpq - h.loopStartPpq;
+        if (h.isLooping && loopLen > 0.0 && h.ppq < h.loopEndPpq
+            && h.ppq + static_cast<double>(numSamples)*ppqPerSample >= h.loopEndPpq)
+        {
+            const auto wrapSample = m_blockStartSample + static_cast<juce::int64>(std::ceil((h.loopEndPpq - h.ppq)/ppqPerSample));
+            add(wrapSample, h.loopStartPpq);
+        }
+        m_expectedPpq = ppqAtSample(m_blockStartSample + numSamples);
+    }
+    m_wasPlaying = playing;
 }
 
 void JadeSpectrogramAudio::applyPendingChanges()
@@ -239,12 +292,19 @@ int JadeSpectrogramAudio::processSynchronBlock(juce::AudioBuffer<float> & buffer
         SliceInfo info;
         info.hop = numSamples;
         info.endSample = m_sliceEndSample;
+        // sections that started up to the end of this slice: the latest belongs to this slice
+        while (m_nrOfSegments > 0 && m_segments[0].sample <= m_sliceEndSample)
+        {
+            info.hasSegmentStart = true;
+            info.segmentStartPpq = m_segments[0].ppq;
+            std::move(m_segments.begin() + 1, m_segments.end(), m_segments.begin());
+            --m_nrOfSegments;
+        }
         if (m_hostPosition.hasPpq && m_hostPosition.bpm > 0.0)
         {
-            // position at the end of this slice: host position at the block start plus the samples since then
-            const double samplesSinceBlockStart = static_cast<double>(m_sliceEndSample - m_blockStartSample);
+            // position at the end of this slice (host position of the block plus the samples since then)
             info.hasPpq = true;
-            info.ppq = m_hostPosition.ppq + samplesSinceBlockStart*m_hostPosition.bpm/(60.0*static_cast<double>(fs));
+            info.ppq = ppqAtSample(m_sliceEndSample);
             info.bpm = static_cast<float>(m_hostPosition.bpm);
             const int den = m_hostPosition.denominator > 0 ? m_hostPosition.denominator : 4;
             const int num = m_hostPosition.numerator > 0 ? m_hostPosition.numerator : 4;
@@ -909,7 +969,8 @@ void JadeSpectrogramGUI::timerCallback()
         {
             m_displaymem[m_displaymem_writepos] = m_exchangeSpectrum;
             m_columnBeat[m_displaymem_writepos] = {sliceInfo.hasPpq, sliceInfo.ppq, sliceInfo.barStartPpq,
-                                                   sliceInfo.barLengthPpq, sliceInfo.beatPpq, sliceInfo.bpm, sliceInfo.endSample};
+                                                   sliceInfo.barLengthPpq, sliceInfo.beatPpq, sliceInfo.bpm, sliceInfo.endSample,
+                                                   sliceInfo.hasSegmentStart, sliceInfo.segmentStartPpq};
             m_newestColumn = m_columnBeat[m_displaymem_writepos];
             m_lastSliceInfo = sliceInfo;
             // write into Bitmap
@@ -1501,7 +1562,9 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
     // (resolution 1: bars only; 1/2, 1/4, 1/8, 1/16: note values counted from the bar start, as in
     // a DAW grid, e.g. 1/4 in 4/4 = every beat), interpolated between the two columns. Bars and
     // beats are drawn stronger. No lines where the position does not advance (transport stopped) or
-    // jumps (locate, loop), or without host tempo. If the grid lines would come closer than 5 px,
+    // without host tempo. Where a new section starts inside a column (start of play, locate, loop
+    // jump, marked by the audio thread), the lines from the section start to the column end are
+    // counted back from the column end; other jumps between two columns get no lines. If the grid lines would come closer than 5 px,
     // only the beats (if coarser) or only the bars are drawn. White with a dark shadow,
     // so they are visible on bright and on dark parts of the spectrogram.
     const size_t W = m_internalWidth;
@@ -1526,12 +1589,15 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
     {
         const ColumnBeat a = beatOfColumn(memColumn(ww - 1));
         const ColumnBeat b = beatOfColumn(memColumn(ww));
-        if (!a.has || !b.has || !(b.ppq > a.ppq) || b.bpm <= 0.f)
+        if (!b.has || b.bpm <= 0.f)
             continue;
         // expected advance per column; much more means a jump
         const double perColumn = static_cast<double>(b.bpm)/60.0*static_cast<double>(m_currentHop)/static_cast<double>(fs);
-        if (b.ppq - a.ppq > 3.0*perColumn + 1e-9)
+        // positions drawn for this column: (a.ppq, b.ppq], or [section start, b.ppq] after a jump
+        const bool newSection = b.hasSegmentStart && b.ppq >= b.segmentStartPpq - 1e-9;
+        if (!newSection && (!a.has || !(b.ppq > a.ppq) || b.ppq - a.ppq > 3.0*perColumn + 1e-9))
             continue;
+        const double from = newSection ? b.segmentStartPpq : a.ppq;
         const float pxPerPpq = pxPerColumn/static_cast<float>(perColumn);
         const double barLen = static_cast<double>(b.barLen), beatLen = static_cast<double>(b.beatLen);
         if (barLen*static_cast<double>(pxPerPpq) < 5.0)
@@ -1546,17 +1612,19 @@ void JadeSpectrogramGUI::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> di
                 fineStep = beatLen;
         }
         const float xa = xOf(ww - 1), xb = xOf(ww);
-        for (double k = std::floor((a.ppq - b.barStart)/fineStep) + 1.0; b.barStart + k*fineStep <= b.ppq + 1e-9; k += 1.0)
+        for (double k = std::floor((from - b.barStart)/fineStep); b.barStart + k*fineStep <= b.ppq + 1e-9; k += 1.0)
         {
             const double pos = b.barStart + k*fineStep;
-            if (pos <= a.ppq)
+            if (newSection ? pos < from - 1e-9 : pos <= from)
                 continue;
             const double inBar = (pos - b.barStart)/static_cast<double>(b.barLen);
             const double inBeat = (pos - b.barStart)/static_cast<double>(b.beatLen);
             const bool isBar = std::abs(inBar - std::round(inBar)) < 1e-6;
             const bool isBeat = std::abs(inBeat - std::round(inBeat)) < 1e-6;
             // snapped to the pixel centre: a crisp line of the same intensity everywhere (error < 0.5 px)
-            const float x = std::floor(xa + static_cast<float>((pos - a.ppq)/(b.ppq - a.ppq))*(xb - xa)) + 0.5f;
+            const float xPos = newSection ? xb - static_cast<float>(b.ppq - pos)*pxPerPpq // back from the column end
+                                          : xa + static_cast<float>((pos - a.ppq)/(b.ppq - a.ppq))*(xb - xa);
+            const float x = std::floor(xPos) + 0.5f;
             const float alpha = isBar ? 0.6f : (isBeat ? 0.45f : 0.25f);
             const float width = isBar ? 2.f : 1.f;
             // vertical lines as rectangles: the same area as a line of this width centred at x,
