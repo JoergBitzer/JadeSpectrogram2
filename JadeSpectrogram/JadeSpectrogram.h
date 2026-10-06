@@ -287,7 +287,7 @@ private:
     // --- display memory: the last 10 s of spectra (one column per hop) and their image ---
     std::vector<std::vector<float >> m_displaymem;
     size_t m_displaymem_writepos = 0;
-    size_t m_newDataAvailable = 0;
+    size_t m_newDataAvailable = 0; // columns read since the last updateImage
     std::vector<float> m_exchangeSpectrum;
     size_t m_currentHop = 1; // hop of the slices in the display memory (from SliceInfo)
     size_t m_internalWidth;

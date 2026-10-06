@@ -836,9 +836,6 @@ void JadeSpectrogramGUI::paint(juce::Graphics &g)
     drawTimeAxis(g, display, m_scaleFactor*static_cast<float>(TextHeight));
     drawColorbar(g, display, TextHeight);
 
-    // the columns drawn since the last paint are on screen now (see updateImage)
-    m_newDataAvailable = 0;
-
     drawCrosshair(g, display);
 
     // version, left of the time axis labels, below the frequency axis (the bottom row holds the reference pitch)
@@ -1057,7 +1054,9 @@ void JadeSpectrogramGUI::readNewSlices()
 
 void JadeSpectrogramGUI::updateImage()
 {
-    // scrolling display: move the image left by the new columns and draw them at the right edge
+    // scrolling display: move the image left by the new columns and draw them at the right edge.
+    // The count is reset here (not in paint): the timer may run several times without a paint.
+    m_newDataAvailable = std::min(m_newDataAvailable, m_internalWidth);
     if (!m_fixedDisplay)
     {
         int startread = m_displaymem_writepos - m_newDataAvailable;
@@ -1077,6 +1076,7 @@ void JadeSpectrogramGUI::updateImage()
         auto p = getMouseXYRelative();
         setLabelText(p.getX(),p.getY());
     }
+    m_newDataAvailable = 0;
     // new colours, mapping or mode: the whole image from the memory
     if (m_recomputeAll == true)
     {
