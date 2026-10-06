@@ -4,7 +4,6 @@
 #include <array>
 #include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "tools/AudioProcessParameter.h"
 #include "tools/SynchronBlockProcessor.h"
 #include "PluginSettings.h"
 
@@ -116,7 +115,7 @@ public:
     };
 
     // --- setup and processing (audio thread) ---
-    JadeSpectrogramAudio(JadeSpectrogramAudioProcessor* processor);
+    JadeSpectrogramAudio();
     void prepareToPlay(double sampleRate, int max_samplesPerBlock, int max_channels);
     // hides SynchronBlockProcessor::processBlock: applies pending FFT size / window changes first
     void processBlock(juce::AudioBuffer<float>& data, juce::MidiBuffer& midiMessages);
@@ -131,13 +130,11 @@ public:
     size_t getSpectrumSize(){return m_publishedFreqSize.load();}; // spectrum size currently produced by the audio thread
     float getSamplerate(){return m_fs.load();};
 
-    // --- analysis settings: callable from any thread (GUI), applied by the audio thread ---
-    // setFFTSize and setWindowType only post a request, the audio thread applies it at the start
-    // of its next processBlock
+    // --- analysis settings: callable from any thread, applied by the audio thread ---
+    // they only post a request, the audio thread applies it at the start of its next processBlock.
+    // The plugin uses the parameters (prepareParameter); FFT size, window, overlap, averaging and
+    // channel mix can be set directly without parameters (tests).
     void setFFTSize(size_t newFFTSize){m_requestedFFTSize.store(newFFTSize);};
-    size_t getFFTSize() const {return m_requestedFFTSize.load();};
-    void setclosestFFTSize_ms(float fftsize_ms);
-    size_t getnextpowerof2(float fftsize_ms);
     void setWindowType(SpectrumAnalyzer::WindowType type){m_requestedWindow.store(type);};
     void setChannelMixMode(ChannelMixMode mode){m_mixMode.store(mode);};
     void setPauseMode (bool mode){m_PauseMode.store(mode);};
@@ -177,8 +174,6 @@ public:
     bool getMemSlice(std::vector<float>& outBlock){ return m_fifo.pop(outBlock); };
 
 private:
-    JadeSpectrogramAudioProcessor* m_processor;
-
     // --- shared with other threads (atomics) ---
     std::atomic<int> m_Latency {0}; // written by the audio thread on an FFT size switch
     std::atomic<float> m_fs {48000.f}; // written in prepareToPlay, read by the GUI
@@ -197,10 +192,6 @@ private:
     std::atomic<float>* m_windowParam = nullptr;
     std::atomic<float>* m_averagingParam = nullptr;
     std::atomic<float>* m_overlapParam = nullptr;
-    jade::AudioProcessParameter<float> m_DisplayMinFreq;
-    jade::AudioProcessParameter<float> m_DisplayMaxFreq;
-    jade::AudioProcessParameter<float> m_DisplayMinColor;
-    jade::AudioProcessParameter<float> m_DisplayMaxColor;
 
     // --- analyzers: active settings (audio thread only) ---
     size_t m_channels = 2;
@@ -216,7 +207,12 @@ private:
     void applyPendingChanges(); // audio thread, realtime safe
     void switchFFTSize(size_t newFFTSize); // audio thread, realtime safe
 
-    // --- buffers of one analysis block ---
+    // --- analysis of one hop (processSynchronBlock) ---
+    void readInput(const juce::AudioBuffer<float>& buffer, ChannelMixMode mixMode); // -> m_timeInLeft/Right
+    void computePower(size_t numChannels, ChannelMixMode mixMode); // periodograms, channel mix -> m_power
+    void applyAveraging(size_t numSamples, float fs); // exponential average of m_power along time
+    SliceInfo takeSliceInfo(size_t numSamples); // hop, end sample, musical position of the slice
+    // buffers of one analysis block
     std::vector<float> m_power;
     std::vector<float> m_perLeft;
     std::vector<float> m_perRight;
@@ -260,13 +256,9 @@ public:
     void resized() override;
     void setScaleFactor(float newscale){m_scaleFactor = newscale;};
     void timerCallback() override;
-    std::function<void()> somethingChanged;
 
     // --- title bar: the editor is the parent of these controls (add, place, show/hide for the about box) ---
-    // lin/log switch; the editor places it above the frequency axis (in its title bar)
-    juce::Button& getFreqAxisButton() { return m_freqAxisButton; }
-    // buttons that the editor shows in its title bar, right of the title image
-    juce::Button& getKeyboardButton() { return m_keyboardButton; }
+    // Lin/Log above the frequency axis; keyboard, BPM grid controls right of the title image
     std::vector<juce::Component*> getTitleBarControls();
     void setTitleBarBounds(float editorScaleFactor);
     void setTitleBarVisible(bool visible);
@@ -280,6 +272,13 @@ private:
     juce::AudioProcessorValueTreeState& m_apvts;
     float m_scaleFactor = 1.f;
 
+    // --- construction: memory, then the controls section by section ---
+    void initDisplayMemory();
+    void setupRangeSliders();
+    void setupBottomRow();
+    void setupNoteControls();
+    void setupBeatControls();
+
     // --- parameters: read the saved settings, write from the controls (with host gestures) ---
     void syncFromParameters(); // lin/log and Run/Fix from the saved parameters
     void setBoolParameter(const juce::String& id, bool value);
@@ -290,25 +289,27 @@ private:
     size_t m_displaymem_writepos = 0;
     size_t m_newDataAvailable = 0;
     std::vector<float> m_exchangeSpectrum;
-    SliceInfo m_lastSliceInfo;            // of the newest slice
     size_t m_currentHop = 1; // hop of the slices in the display memory (from SliceInfo)
     size_t m_internalWidth;
     size_t m_internalHeight = 1;
     Image m_internalImg {Image::RGB, 1, 1, true};
     size_t m_imageRows = 1; // height of m_internalImg
     bool m_recomputeAll = true;
+    void readNewSlices(); // FIFO -> display memory (Fix mode: also the image)
+    void updateImage();   // scrolling display: new columns; m_recomputeAll: the whole image
+    void writeImageColumn(const Image::BitmapData& destData, size_t memColumn, size_t imageColumn);
+    void drawFixCursor(const Image::BitmapData& destData) const; // red line right of the write position
     juce::Rectangle<int> displayArea() const; // the analysis display in component coordinates
     float displayHeight() const; // height of the analysis display in pixels
 
     // --- colours: palette, colour range and the colour bar ---
     CColorPalette m_colorpalette {256, CColorPalette::PaletteName::kPlasma};
-    float m_maxColorVal = g_maxColorVal;
-    float m_minColorVal = g_minColorVal;
     float m_lastColorMin = 0.f, m_lastColorMax = 0.f; // palette range of the current image
     Image m_ColorbarImg; // colour bar at its pixel size, rebuilt only when map, colour range or size change
     int m_colorbarScheme = -1;
     float m_colorbarMin = 0.f, m_colorbarMax = 0.f;
     void updateColorbarImage(int width, int height);
+    void drawColorbar(juce::Graphics& g, juce::Rectangle<int> display, int textHeight);
 
     // --- frequency axis: lin/log, displayed range and the mapping of bins to image rows ---
     // Frequency axis and image layout (m_axisMap):
@@ -358,13 +359,12 @@ private:
     bool m_isPaused = false;
     void pauseClicked();
     TextButton m_runModeButton;
-    bool m_isRunningDisplay = false;
+    bool m_fixedDisplay = false; // Fix: fixed image with a running red cursor; else scrolling
     void runClicked();
     void setDisplayMode(bool fixed); // Fix (fixed image, running cursor) or Scroll
     ComboBox m_windowFktCombo;
     ComboBox m_overlapCombo;
     ComboBox m_fftSizeCombo;
-    bool m_hideFFTSizeCombobox = false;
     // averaging along time: "Avg" label, slider with the value ("off" / ms)
     Label m_averagingLabel;
     Slider m_averagingSlider {Slider::LinearHorizontal, Slider::TextBoxRight};

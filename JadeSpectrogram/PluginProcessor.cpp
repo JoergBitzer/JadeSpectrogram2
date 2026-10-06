@@ -10,7 +10,7 @@ JadeSpectrogramAudioProcessor::JadeSpectrogramAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),m_algo(this), m_parameterVTS(nullptr)
+                       ),m_algo(), m_parameterVTS(nullptr)
 {
 
     m_algo.addParameter(m_paramVector);

@@ -6,7 +6,7 @@
 
 set(TARGET_NAME JadeSpectrogram)
 
-project(${TARGET_NAME} VERSION 2.4.3)
+project(${TARGET_NAME} VERSION 2.4.4)
 
 configure_file(Versioning.h.in Versioning.h)
 
