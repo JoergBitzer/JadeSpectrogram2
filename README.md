@@ -149,6 +149,8 @@ The results are in `build/JadeSpectrogram/JadeSpectrogram_artefacts/Release/`. O
 install the JUCE dependencies first (see `JUCE/docs/Linux Dependencies.md`; the list used for
 the release builds is in `.github/workflows/release.yml`). Test a build with
 `tools/run_pluginval.sh <path to the .vst3> [runs]` (Windows: `tools/run_pluginval.ps1`).
+The tests of the plugin code are built with `-DJADE_BUILD_TESTS=ON` and run with `ctest`
+(Linux/macOS, see [tester/README.md](tester/README.md)).
 
 To update JUCE: `cd JUCE && git fetch --tags && git checkout <version>`, then commit the new
 submodule state.
@@ -164,7 +166,7 @@ GitHub release with the zips. "Run workflow" on the Actions page builds without 
 |---|---|
 | [JadeSpectrogram/](JadeSpectrogram/) | the plugin: `JadeSpectrogram.h/.cpp` (parameters, analysis `JadeSpectrogramAudio`, GUI `JadeSpectrogramGUI`), `SpectrumAnalyzer` (windowed FFT, overlap), `TwoDimBlockFreeFiFo` (lock-free exchange audio -> GUI), `RangeSlider.h`, `DragValueBox.h`, `IconButton.h`, `CColorpalette` (colourmaps) |
 | `JadeSpectrogram/tools/` | `SynchronBlockProcessor` (fixed-size blocks, with an *Analyze* mode: zero latency), parameter and preset helpers |
-| [tester/](tester/) | `fftBenchmark` (internal FFT against JUCE's FFT), `spectrumAnalyzerTester` |
+| [tester/](tester/) | the plugin tests (`pluginTests`, run with `ctest`, see [tester/README.md](tester/README.md)), `fftBenchmark` (internal FFT against JUCE's FFT), `spectrumAnalyzerTester` |
 | [tools/](tools/) | `run_pluginval.sh` / `.ps1` |
 | [docs/](docs/) | the [manual](docs/ManualJadeSpectrogram2.pdf) (all controls, release notes) and the screenshots |
 | [planning.md](planning.md) | the code review, the plan for 2.0 and the future ideas |

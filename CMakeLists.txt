@@ -61,4 +61,11 @@ add_subdirectory(tester/fftBenchmark)
 
 # Add your projects
 
-add_subdirectory(JadeSpectrogram)                  
+add_subdirectory(JadeSpectrogram)
+
+# tests of the plugin code (tester/pluginTests): cmake -DJADE_BUILD_TESTS=ON ..., then ctest
+option(JADE_BUILD_TESTS "Build the plugin tests in tester/pluginTests" OFF)
+if(JADE_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tester/pluginTests)
+endif()                  
